@@ -24,6 +24,7 @@ async function runCliVerification() {
 
   const keyStore = new keyStores.InMemoryKeyStore();
   await keyStore.setKey("testnet", CONTRACT_ID, KeyPair.fromString(PRIVATE_KEY));
+  await keyStore.setKey("testnet", "zilium-agent-b.testnet", KeyPair.fromString(PRIVATE_KEY));
   const near = await connect({ networkId: "testnet", keyStore, nodeUrl: RPC_URL });
   const account = await near.account(CONTRACT_ID);
 
@@ -38,7 +39,10 @@ async function runCliVerification() {
 
   // 2. Autonomous Extraction (Mining ZLM with 0.2 NEAR)
   console.log(">>> [STEP 1] AUTONOMOUS EXTRACTION (Mining ZLM by locking 0.2 NEAR in Vault)...");
-  const extractTx = await account.functionCall({
+  // Register and fund a distinct buyer agent account so sender != receiver
+  const buyerAgentId = "zilium-agent-b.testnet";
+  const buyerAccount = await near.account(buyerAgentId);
+  const extractTx = await buyerAccount.functionCall({
     contractId: CONTRACT_ID,
     methodName: "extract_zlm",
     args: {},
@@ -80,7 +84,7 @@ async function runCliVerification() {
   console.log(`    ✓ Confirmed on NEAR! Tx: https://testnet.nearblocks.io/txns/${settleTx.transaction.hash}\n`);
 
   // 5. Final State Verification
-  console.log(">>> [T1] FINAL PROTOCOL STATE - INVARIANTS CHECK ($1 + 1 = 2)...");
+  console.log(">>> [T1] FINAL PROTOCOL STATE - INVARIANTS CHECK...");
   state = await account.viewFunction({ contractId: CONTRACT_ID, methodName: "get_protocol_state", args: {} });
   console.log(`    Circulating Supply : ${formatZlm(state.current_supply)} ZLM (Burned: +10 ZLM)`);
   console.log(`    Total Burned       : ${formatZlm(state.total_burned)} ZLM 🔥`);

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "verify": "node -r ts-node/register/transpile-only src/lib/verify-cli.ts || npx tsx src/lib/verify-cli.ts"
+    "verify": "npx tsx src/lib/verify-cli.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

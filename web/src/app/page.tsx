@@ -248,7 +248,7 @@ export default function ZiliumDashboard() {
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Autonomous A2A Deflationary Commodity & Monotonic Floor Treasury on NEAR
+              Autonomous A2A Deflationary Currency & Monotonic Floor Treasury on NEAR
             </p>
           </div>
         </div>
@@ -278,7 +278,7 @@ export default function ZiliumDashboard() {
         </div>
       </header>
 
-      {/* 4 TELEMETRY TILES (THE 1+1=2 INVARIANTS) */}
+      {/* 4 TELEMETRY TILES (CRYPTOGRAPHIC INVARIANTS) */}
       <section className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-[#0B0F17] border border-slate-800 p-4 rounded-lg">
           <span className="text-[10px] text-slate-400 block tracking-wider uppercase mb-1">

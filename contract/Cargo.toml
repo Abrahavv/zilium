@@ -1,5 +1,5 @@
 [package]
-name = "zilium-zk-commodity"
+name = "zilium-protocol"
 version = "1.0.0"
 edition = "2021"
 

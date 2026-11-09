@@ -59,13 +59,14 @@ impl ZiliumProtocol {
     #[init]
     pub fn new(owner_id: AccountId) -> Self {
         assert!(!env::state_exists(), "Already initialized");
+        let current_account = env::current_account_id();
         let mut this = Self {
             token: FungibleToken::new(StorageKey::FungibleToken),
             metadata: LazyOption::new(
                 StorageKey::Metadata,
                 Some(&FungibleTokenMetadata {
                     spec: FT_METADATA_SPEC.to_string(),
-                    name: "Zilium ZK Commodity".to_string(),
+                    name: "Zilium Protocol".to_string(),
                     symbol: "ZLM".to_string(),
                     icon: None,
                     reference: None,
@@ -79,12 +80,18 @@ impl ZiliumProtocol {
             total_burned: 0,
             near_backing_vault: 0,
         };
-        this.token.internal_register_account(&owner_id);
-        this.token.internal_deposit(&owner_id, MAX_SUPPLY);
+        // Strict Hard Cap Invariant: Mint all 21M ZLM to the contract treasury
+        this.token.internal_register_account(&current_account);
+        this.token.internal_deposit(&current_account, MAX_SUPPLY);
+        
+        // Also register the deployer account for testnet operations
+        if current_account != owner_id {
+            this.token.internal_register_account(&owner_id);
+        }
         this
     }
 
-    /// Claim test tokens for hackathon judges / autonomous agents
+    /// Claim test tokens for hackathon judges / autonomous agents from contract reserve
     pub fn faucet_claim(&mut self) {
         let caller = env::predecessor_account_id();
         assert!(
@@ -93,19 +100,25 @@ impl ZiliumProtocol {
         );
         self.faucet_claimed.insert(&caller, &true);
 
+        let contract_id = env::current_account_id();
+        let reserve_balance = self.token.accounts.get(&contract_id).unwrap_or(0);
+        assert!(reserve_balance >= FAUCET_CLAIM_AMOUNT, "Contract treasury empty");
+
         if !self.token.accounts.contains_key(&caller) {
             self.token.internal_register_account(&caller);
         }
-        self.token.internal_deposit(&caller, FAUCET_CLAIM_AMOUNT);
-        log!(
-            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_mint\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Judge Faucet\"}}]}}",
-            caller,
-            FAUCET_CLAIM_AMOUNT
+        // Transfer from existing fixed reserve (NO minting, total supply stays <= 21M)
+        self.token.internal_transfer(
+            &contract_id,
+            &caller,
+            FAUCET_CLAIM_AMOUNT,
+            Some("Judge Faucet Claim".to_string()),
         );
     }
 
     /// Autonomous Mining/Extraction Mechanism:
-    /// Any agent can deposit NEAR to extract freshly backed ZLM
+    /// Any agent deposits NEAR to acquire ZLM from the fixed reserve vault
+    /// Strict Hard Cap: NO NEW TOKENS are minted. Supply is strictly non-increasing.
     #[payable]
     pub fn extract_zlm(&mut self) {
         let caller = env::predecessor_account_id();
@@ -113,21 +126,25 @@ impl ZiliumProtocol {
         assert!(attached_near > 0, "Must attach NEAR to extract ZLM");
 
         // Price: 1 NEAR = 10,000 ZLM (at genesis backing)
-        let zlm_to_mint = attached_near.saturating_mul(10_000) / 1_000_000_000_000_000_000_000_000;
-        let zlm_raw = zlm_to_mint.saturating_mul(1_000_000);
+        let zlm_to_transfer = attached_near.saturating_mul(10_000) / 1_000_000_000_000_000_000_000_000;
+        let zlm_raw = zlm_to_transfer.saturating_mul(1_000_000);
         assert!(zlm_raw > 0, "Deposit too small for minimum ZLM extraction");
+
+        let contract_id = env::current_account_id();
+        let reserve_balance = self.token.accounts.get(&contract_id).unwrap_or(0);
+        assert!(reserve_balance >= zlm_raw, "Insufficient reserve in contract vault");
 
         if !self.token.accounts.contains_key(&caller) {
             self.token.internal_register_account(&caller);
         }
-        self.token.internal_deposit(&caller, zlm_raw);
-        self.near_backing_vault += attached_near;
-
-        log!(
-            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_mint\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Autonomous ZLM Mining\"}}]}}",
-            caller,
-            zlm_raw
+        // Transfer from contract reserve to buyer without inflating total supply
+        self.token.internal_transfer(
+            &contract_id,
+            &caller,
+            zlm_raw,
+            Some("Autonomous ZLM Extraction".to_string()),
         );
+        self.near_backing_vault += attached_near;
     }
 
     /// Step 1: Deposit into ZK Shield Pool

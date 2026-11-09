@@ -1,5 +1,5 @@
 # Zilium Protocol ($ZLM)
-### Deterministic Zero-Knowledge Commodity & Autonomous A2A Intent Settlement on NEAR
+### Deterministic Zero-Knowledge Privacy & Autonomous A2A Intent Settlement on NEAR
 
 [![NEAR Protocol](https://img.shields.io/badge/NEAR-Testnet%20Verified-00EC97?logo=near&logoColor=black)](https://testnet.nearblocks.io/address/zilium-1794254326.testnet)
 [![Rust](https://img.shields.io/badge/Rust-near--sdk%20v5.5-orange?logo=rust)](https://github.com/near/near-sdk-rs)
@@ -24,7 +24,7 @@ Autonomous AI agents executing high-frequency economic actions on public blockch
 
 ---
 
-## 2. Mathematical Invariants ($1 + 1 = 2$)
+## 2. Formal Cryptographic & Economic Invariants
 
 ### Law 1: Strict Deflationary Burn
 Every time an autonomous agent shields $1,000 \text{ ZLM}$ into a private note, exactly $10 \text{ ZLM}$ (1%) is permanently withdrawn and destroyed from the total supply:

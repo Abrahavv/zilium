@@ -8,12 +8,11 @@ use near_contract_standards::fungible_token::{
 use near_contract_standards::storage_management::{
     StorageBalance, StorageBalanceBounds, StorageManagement,
 };
-use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    env, log, near_bindgen, AccountId, BorshStorageKey, NearToken, PanicOnDefault, Promise,
+    env, log, near, AccountId, BorshStorageKey, NearToken, PanicOnDefault, Promise,
     PromiseOrValue,
 };
 
@@ -23,8 +22,8 @@ const DEFLATION_BURN_FEE: u128 = 10_000_000;      // 10.000000 ZLM (exact 1% bur
 const SHIELD_NEAR_BACKING: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR min backing
 const FAUCET_CLAIM_AMOUNT: u128 = 2_000_000_000;  // 2,000.000000 ZLM for judges/testing
 
-#[derive(BorshSerialize, BorshStorageKey)]
-#[borsh(crate = "near_sdk::borsh")]
+#[derive(BorshStorageKey)]
+#[near]
 enum StorageKey {
     FungibleToken,
     Metadata,
@@ -33,9 +32,8 @@ enum StorageKey {
     FaucetClaimed,
 }
 
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-#[borsh(crate = "near_sdk::borsh")]
+#[near(contract_state)]
+#[derive(PanicOnDefault)]
 pub struct ZiliumProtocol {
     pub token: FungibleToken,
     pub metadata: LazyOption<FungibleTokenMetadata>,
@@ -56,7 +54,7 @@ pub struct ProtocolState {
     pub active_zk_notes: u64,
 }
 
-#[near_bindgen]
+#[near]
 impl ZiliumProtocol {
     #[init]
     pub fn new(owner_id: AccountId) -> Self {
@@ -103,6 +101,32 @@ impl ZiliumProtocol {
             "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_mint\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Judge Faucet\"}}]}}",
             caller,
             FAUCET_CLAIM_AMOUNT
+        );
+    }
+
+    /// Autonomous Mining/Extraction Mechanism:
+    /// Any agent can deposit NEAR to extract freshly backed ZLM
+    #[payable]
+    pub fn extract_zlm(&mut self) {
+        let caller = env::predecessor_account_id();
+        let attached_near = env::attached_deposit().as_yoctonear();
+        assert!(attached_near > 0, "Must attach NEAR to extract ZLM");
+
+        // Price: 1 NEAR = 10,000 ZLM (at genesis backing)
+        let zlm_to_mint = attached_near.saturating_mul(10_000) / 1_000_000_000_000_000_000_000_000;
+        let zlm_raw = zlm_to_mint.saturating_mul(1_000_000);
+        assert!(zlm_raw > 0, "Deposit too small for minimum ZLM extraction");
+
+        if !self.token.accounts.contains_key(&caller) {
+            self.token.internal_register_account(&caller);
+        }
+        self.token.internal_deposit(&caller, zlm_raw);
+        self.near_backing_vault += attached_near;
+
+        log!(
+            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_mint\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Autonomous ZLM Mining\"}}]}}",
+            caller,
+            zlm_raw
         );
     }
 
@@ -240,7 +264,7 @@ impl ZiliumProtocol {
 }
 
 // NEP-141 Fungible Token Standard Core
-#[near_bindgen]
+#[near]
 impl FungibleTokenCore for ZiliumProtocol {
     #[payable]
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>) {
@@ -268,7 +292,7 @@ impl FungibleTokenCore for ZiliumProtocol {
 }
 
 // NEP-141 Fungible Token Standard Resolver
-#[near_bindgen]
+#[near]
 impl FungibleTokenResolver for ZiliumProtocol {
     #[private]
     fn ft_resolve_transfer(
@@ -282,7 +306,7 @@ impl FungibleTokenResolver for ZiliumProtocol {
 }
 
 // NEAR Intents Receiver Standard (NEP-141 ft_on_transfer)
-#[near_bindgen]
+#[near]
 impl FungibleTokenReceiver for ZiliumProtocol {
     fn ft_on_transfer(
         &mut self,
@@ -290,7 +314,6 @@ impl FungibleTokenReceiver for ZiliumProtocol {
         amount: U128,
         msg: String,
     ) -> PromiseOrValue<U128> {
-        // msg format: {"action": "deposit_shield", "commitment_hex": "..."}
         #[derive(Deserialize)]
         #[serde(crate = "near_sdk::serde")]
         struct IntentMsg {
@@ -319,13 +342,12 @@ impl FungibleTokenReceiver for ZiliumProtocol {
                 }
             }
         }
-        // Default: keep transferred tokens
         PromiseOrValue::Value(U128(0))
     }
 }
 
 // NEP-145 Storage Management Standard
-#[near_bindgen]
+#[near]
 impl StorageManagement for ZiliumProtocol {
     #[payable]
     fn storage_deposit(
@@ -343,7 +365,7 @@ impl StorageManagement for ZiliumProtocol {
 
     #[payable]
     fn storage_unregister(&mut self, force: Option<bool>) -> bool {
-        self.token.storage_unregister(force).is_some()
+        self.token.storage_unregister(force)
     }
 
     fn storage_balance_bounds(&self) -> StorageBalanceBounds {
@@ -356,10 +378,9 @@ impl StorageManagement for ZiliumProtocol {
 }
 
 // NEP-148 Fungible Token Metadata Standard
-#[near_bindgen]
+#[near]
 impl FungibleTokenMetadataProvider for ZiliumProtocol {
     fn ft_metadata(&self) -> FungibleTokenMetadata {
         self.metadata.get().unwrap()
     }
 }
-

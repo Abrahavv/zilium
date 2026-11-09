@@ -1,6 +1,6 @@
 import { ProtocolState, ZkNoteTicket } from "./types";
 
-export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-v1.testnet";
+export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-1794254326.testnet";
 export const NETWORK_ID = "testnet";
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.near.org";
 

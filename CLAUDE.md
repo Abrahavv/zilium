@@ -84,3 +84,4 @@ cargo build --target wasm32-unknown-unknown --release
 - **Strict Typing:** All TypeScript under `strict: true`. Zero `any` or untyped structures.
 - **Fail-Closed:** Smart contract operations must assert preconditions and revert immediately on invalid preimages or insufficient balances.
 - **Tone & Terminology:** Maintain institutional, quantitative engineering tone. Avoid informal analogies or framing the currency as a "commodity".
+

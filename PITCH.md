@@ -5,9 +5,10 @@
 - **Project Name:** Zilium Protocol
 - **Token Symbol:** $ZLM
 - **Track Selection:**
-  - **Primary:** `[ 11 / MEM ] Memecoins With Mechanics` ("Judged on the mechanic, not the chart")
-  - **Secondary:** `[ 03 / PRV ] Privacy & Autonomous AI`
-- **Tagline:** Autonomous A2A Deflationary Currency with Monotonically Increasing Floor Price & Unlinked Settlement on NEAR.
+  - **Primary Track:** `Agent Economy` (Private economic settlement rail for autonomous AI agent-to-agent transactions)
+  - **Secondary Tracks:** `Privacy & Private AI` | `Memecoins With Mechanics`
+- **One-Liner / Value Proposition:**
+  "Zilium is the privacy and economic settlement rail for the Agent Economy on NEAR: an autonomous A2A deflationary currency featuring a monotonically increasing floor price backed by NEAR reserves and unlinked atomic settlement in a single block."
 - **Contract ID (NEAR Testnet):** [`zilium-clean-1794256999.testnet`](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet)
 - **Explorer:** [https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet)
 - **GitHub Repository:** `<YOUR_GITHUB_REPO_URL>`
@@ -70,3 +71,4 @@
 
 ### Q3 (From Mert Mumtaz / Helius): "What prevents double-spends or front-running?"
 > **Answer:** *"The contract maintains a state-isolated `UnorderedSet` of spent nullifier hashes. When Agent B settles an intent, `nullifier_hash = SHA256(nullifier)` is immediately verified and marked as spent. Any mempool front-runner attempting to reuse the pre-image reverts immediately at block execution."*
+

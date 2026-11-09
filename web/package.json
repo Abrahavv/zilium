@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "verify": "npx tsx src/lib/verify-cli.ts"
+    "verify": "npx tsx src/lib/verify-cli.ts",
+    "simulate-agents": "npx tsx src/lib/agent-simulation.ts"
   },
   "dependencies": {
     "@near-wallet-selector/core": "^10.1.4",

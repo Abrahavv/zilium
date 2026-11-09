@@ -10,6 +10,9 @@
     "verify": "npx tsx src/lib/verify-cli.ts"
   },
   "dependencies": {
+    "@near-wallet-selector/core": "^10.1.4",
+    "@near-wallet-selector/modal-ui": "^10.1.4",
+    "@near-wallet-selector/my-near-wallet": "^10.1.4",
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
     "near-api-js": "^4.0.4",

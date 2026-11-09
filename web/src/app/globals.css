@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import "@near-wallet-selector/modal-ui/styles.css";
+
 :root {
   color-scheme: dark;
 }

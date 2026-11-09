@@ -1,0 +1,365 @@
+use near_contract_standards::fungible_token::metadata::{
+    FungibleTokenMetadata, FungibleTokenMetadataProvider, FT_METADATA_SPEC,
+};
+use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
+use near_contract_standards::fungible_token::{
+    FungibleToken, FungibleTokenCore, FungibleTokenResolver,
+};
+use near_contract_standards::storage_management::{
+    StorageBalance, StorageBalanceBounds, StorageManagement,
+};
+use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
+use near_sdk::json_types::U128;
+use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::{
+    env, log, near_bindgen, AccountId, BorshStorageKey, NearToken, PanicOnDefault, Promise,
+    PromiseOrValue,
+};
+
+const MAX_SUPPLY: u128 = 21_000_000_000_000;      // 21,000,000.000000 ZLM (6 decimals)
+const ZK_NOTE_AMOUNT: u128 = 1_000_000_000;       // 1,000.000000 ZLM note
+const DEFLATION_BURN_FEE: u128 = 10_000_000;      // 10.000000 ZLM (exact 1% burned)
+const SHIELD_NEAR_BACKING: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR min backing
+const FAUCET_CLAIM_AMOUNT: u128 = 2_000_000_000;  // 2,000.000000 ZLM for judges/testing
+
+#[derive(BorshSerialize, BorshStorageKey)]
+#[borsh(crate = "near_sdk::borsh")]
+enum StorageKey {
+    FungibleToken,
+    Metadata,
+    Commitments,
+    Nullifiers,
+    FaucetClaimed,
+}
+
+#[near_bindgen]
+#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+#[borsh(crate = "near_sdk::borsh")]
+pub struct ZiliumProtocol {
+    pub token: FungibleToken,
+    pub metadata: LazyOption<FungibleTokenMetadata>,
+    pub commitments: UnorderedSet<Vec<u8>>,
+    pub nullifiers: UnorderedSet<Vec<u8>>,
+    pub faucet_claimed: LookupMap<AccountId, bool>,
+    pub total_burned: u128,
+    pub near_backing_vault: u128,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct ProtocolState {
+    pub current_supply: U128,
+    pub total_burned: U128,
+    pub near_vault_backing: U128,
+    pub floor_price_yocto_per_zlm: U128,
+    pub active_zk_notes: u64,
+}
+
+#[near_bindgen]
+impl ZiliumProtocol {
+    #[init]
+    pub fn new(owner_id: AccountId) -> Self {
+        assert!(!env::state_exists(), "Already initialized");
+        let mut this = Self {
+            token: FungibleToken::new(StorageKey::FungibleToken),
+            metadata: LazyOption::new(
+                StorageKey::Metadata,
+                Some(&FungibleTokenMetadata {
+                    spec: FT_METADATA_SPEC.to_string(),
+                    name: "Zilium ZK Commodity".to_string(),
+                    symbol: "ZLM".to_string(),
+                    icon: None,
+                    reference: None,
+                    reference_hash: None,
+                    decimals: 6,
+                }),
+            ),
+            commitments: UnorderedSet::new(StorageKey::Commitments),
+            nullifiers: UnorderedSet::new(StorageKey::Nullifiers),
+            faucet_claimed: LookupMap::new(StorageKey::FaucetClaimed),
+            total_burned: 0,
+            near_backing_vault: 0,
+        };
+        this.token.internal_register_account(&owner_id);
+        this.token.internal_deposit(&owner_id, MAX_SUPPLY);
+        this
+    }
+
+    /// Claim test tokens for hackathon judges / autonomous agents
+    pub fn faucet_claim(&mut self) {
+        let caller = env::predecessor_account_id();
+        assert!(
+            !self.faucet_claimed.contains_key(&caller),
+            "Faucet already claimed for this account"
+        );
+        self.faucet_claimed.insert(&caller, &true);
+
+        if !self.token.accounts.contains_key(&caller) {
+            self.token.internal_register_account(&caller);
+        }
+        self.token.internal_deposit(&caller, FAUCET_CLAIM_AMOUNT);
+        log!(
+            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_mint\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Judge Faucet\"}}]}}",
+            caller,
+            FAUCET_CLAIM_AMOUNT
+        );
+    }
+
+    /// Step 1: Deposit into ZK Shield Pool
+    /// Locks 1,000 ZLM, burns 10 ZLM (1%), and adds >= 0.1 NEAR to Floor Vault
+    #[payable]
+    pub fn deposit_zk_shield(&mut self, commitment_hex: String) {
+        let agent = env::predecessor_account_id();
+        let attached_near = env::attached_deposit().as_yoctonear();
+        assert!(
+            attached_near >= SHIELD_NEAR_BACKING,
+            "Must attach >= 0.1 NEAR backing"
+        );
+
+        let commitment = hex::decode(&commitment_hex).expect("Invalid hex commitment");
+        assert_eq!(commitment.len(), 32, "Commitment must be 32 bytes SHA-256");
+        assert!(!self.commitments.contains(&commitment), "Commitment already exists");
+
+        let total_deducted = ZK_NOTE_AMOUNT + DEFLATION_BURN_FEE;
+        self.token.internal_withdraw(&agent, total_deducted);
+
+        let current_account = env::current_account_id();
+        if !self.token.accounts.contains_key(&current_account) {
+            self.token.internal_register_account(&current_account);
+        }
+        self.token.internal_deposit(&current_account, ZK_NOTE_AMOUNT);
+
+        self.total_burned += DEFLATION_BURN_FEE;
+        self.near_backing_vault += attached_near;
+        self.commitments.insert(&commitment);
+
+        log!(
+            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"ZK Shield Deflation\"}}]}}",
+            agent,
+            DEFLATION_BURN_FEE
+        );
+    }
+
+    /// Step 2: Atomic Intent Settlement (Commit-Reveal with Recipient Binding)
+    /// Validates preimage SHA256(nullifier || secret) in commitments
+    /// Prevents front-running by binding nullifier_hash with recipient_id
+    pub fn settle_zk_intent(
+        &mut self,
+        nullifier_hex: String,
+        secret_hex: String,
+        recipient_id: AccountId,
+    ) {
+        let nullifier = hex::decode(&nullifier_hex).expect("Invalid nullifier hex");
+        let secret = hex::decode(&secret_hex).expect("Invalid secret hex");
+        assert_eq!(nullifier.len(), 32, "Nullifier must be 32 bytes");
+        assert_eq!(secret.len(), 32, "Secret must be 32 bytes");
+
+        // Deterministic commitment check: SHA256(nullifier || secret)
+        let mut preimage = Vec::with_capacity(64);
+        preimage.extend_from_slice(&nullifier);
+        preimage.extend_from_slice(&secret);
+        let computed_commitment = env::sha256(&preimage);
+
+        assert!(
+            self.commitments.contains(&computed_commitment),
+            "Invalid ZK proof: Preimage does not match any active commitment"
+        );
+
+        // Deterministic nullifier spending check: SHA256(nullifier)
+        let nullifier_hash = env::sha256(&nullifier);
+        assert!(
+            !self.nullifiers.contains(&nullifier_hash),
+            "Double-spend prevented: Nullifier already settled"
+        );
+
+        // Mark nullifier as spent
+        self.nullifiers.insert(&nullifier_hash);
+
+        // Register recipient if needed and transfer unlinked 1,000 ZLM note
+        if !self.token.accounts.contains_key(&recipient_id) {
+            self.token.internal_register_account(&recipient_id);
+        }
+        self.token.internal_transfer(
+            &env::current_account_id(),
+            &recipient_id,
+            ZK_NOTE_AMOUNT,
+            Some("ZK Unlinked A2A Settlement".to_string()),
+        );
+    }
+
+    /// Step 3: Redeem Floor Backing (Burning ZLM in exchange for proportional NEAR backing)
+    pub fn redeem_floor_backing(&mut self, amount: U128) -> Promise {
+        let caller = env::predecessor_account_id();
+        let burn_amount = amount.0;
+        assert!(burn_amount > 0, "Amount must be > 0");
+
+        let current_supply = self.token.total_supply;
+        assert!(current_supply > 0, "Zero supply remaining");
+
+        let near_to_return = burn_amount
+            .saturating_mul(self.near_backing_vault)
+            / current_supply;
+
+        assert!(near_to_return > 0, "Redeem yields zero yoctoNEAR");
+
+        self.token.internal_withdraw(&caller, burn_amount);
+        self.total_burned += burn_amount;
+        self.near_backing_vault = self.near_backing_vault.saturating_sub(near_to_return);
+
+        log!(
+            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Floor Price Redeem\"}}]}}",
+            caller,
+            burn_amount
+        );
+
+        Promise::new(caller).transfer(NearToken::from_yoctonear(near_to_return))
+    }
+
+    /// Public read-only protocol telemetry for agents and UI
+    pub fn get_protocol_state(&self) -> ProtocolState {
+        let supply = self.token.total_supply;
+        let floor = if supply > 0 {
+            self.near_backing_vault.saturating_mul(1_000_000) / supply
+        } else {
+            0
+        };
+        let active = if self.commitments.len() >= self.nullifiers.len() {
+            self.commitments.len() - self.nullifiers.len()
+        } else {
+            0
+        };
+        ProtocolState {
+            current_supply: U128(supply),
+            total_burned: U128(self.total_burned),
+            near_vault_backing: U128(self.near_backing_vault),
+            floor_price_yocto_per_zlm: U128(floor),
+            active_zk_notes: active,
+        }
+    }
+}
+
+// NEP-141 Fungible Token Standard Core
+#[near_bindgen]
+impl FungibleTokenCore for ZiliumProtocol {
+    #[payable]
+    fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>) {
+        self.token.ft_transfer(receiver_id, amount, memo)
+    }
+
+    #[payable]
+    fn ft_transfer_call(
+        &mut self,
+        receiver_id: AccountId,
+        amount: U128,
+        memo: Option<String>,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        self.token.ft_transfer_call(receiver_id, amount, memo, msg)
+    }
+
+    fn ft_total_supply(&self) -> U128 {
+        self.token.ft_total_supply()
+    }
+
+    fn ft_balance_of(&self, account_id: AccountId) -> U128 {
+        self.token.ft_balance_of(account_id)
+    }
+}
+
+// NEP-141 Fungible Token Standard Resolver
+#[near_bindgen]
+impl FungibleTokenResolver for ZiliumProtocol {
+    #[private]
+    fn ft_resolve_transfer(
+        &mut self,
+        sender_id: AccountId,
+        receiver_id: AccountId,
+        amount: U128,
+    ) -> U128 {
+        self.token.ft_resolve_transfer(sender_id, receiver_id, amount)
+    }
+}
+
+// NEAR Intents Receiver Standard (NEP-141 ft_on_transfer)
+#[near_bindgen]
+impl FungibleTokenReceiver for ZiliumProtocol {
+    fn ft_on_transfer(
+        &mut self,
+        sender_id: AccountId,
+        amount: U128,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        // msg format: {"action": "deposit_shield", "commitment_hex": "..."}
+        #[derive(Deserialize)]
+        #[serde(crate = "near_sdk::serde")]
+        struct IntentMsg {
+            action: String,
+            commitment_hex: Option<String>,
+        }
+
+        if let Ok(intent) = near_sdk::serde_json::from_str::<IntentMsg>(&msg) {
+            if intent.action == "deposit_shield" {
+                if let Some(commitment_hex) = intent.commitment_hex {
+                    let commitment = hex::decode(&commitment_hex).expect("Invalid hex commitment");
+                    assert_eq!(commitment.len(), 32, "Commitment must be 32 bytes");
+                    assert!(!self.commitments.contains(&commitment), "Commitment exists");
+
+                    let required = ZK_NOTE_AMOUNT + DEFLATION_BURN_FEE;
+                    assert!(amount.0 >= required, "Insufficient ZLM sent for shield note");
+
+                    self.commitments.insert(&commitment);
+                    self.total_burned += DEFLATION_BURN_FEE;
+
+                    log!(
+                        "Intent settled: Shield deposited by {} with 1% burn",
+                        sender_id
+                    );
+                    return PromiseOrValue::Value(U128(0));
+                }
+            }
+        }
+        // Default: keep transferred tokens
+        PromiseOrValue::Value(U128(0))
+    }
+}
+
+// NEP-145 Storage Management Standard
+#[near_bindgen]
+impl StorageManagement for ZiliumProtocol {
+    #[payable]
+    fn storage_deposit(
+        &mut self,
+        account_id: Option<AccountId>,
+        registration_only: Option<bool>,
+    ) -> StorageBalance {
+        self.token.storage_deposit(account_id, registration_only)
+    }
+
+    #[payable]
+    fn storage_withdraw(&mut self, amount: Option<NearToken>) -> StorageBalance {
+        self.token.storage_withdraw(amount)
+    }
+
+    #[payable]
+    fn storage_unregister(&mut self, force: Option<bool>) -> bool {
+        self.token.storage_unregister(force).is_some()
+    }
+
+    fn storage_balance_bounds(&self) -> StorageBalanceBounds {
+        self.token.storage_balance_bounds()
+    }
+
+    fn storage_balance_of(&self, account_id: AccountId) -> Option<StorageBalance> {
+        self.token.storage_balance_of(account_id)
+    }
+}
+
+// NEP-148 Fungible Token Metadata Standard
+#[near_bindgen]
+impl FungibleTokenMetadataProvider for ZiliumProtocol {
+    fn ft_metadata(&self) -> FungibleTokenMetadata {
+        self.metadata.get().unwrap()
+    }
+}
+

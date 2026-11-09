@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   generateZkCommitment,
   fetchProtocolTelemetry,
@@ -9,7 +9,7 @@ import {
 } from "@/lib/near-zk";
 import { getWalletSelector } from "@/lib/wallet";
 import { DeterministicZiliumEngine } from "@/lib/state-machine";
-import { ProtocolState, ZkNoteTicket, StateMachineLog } from "@/lib/types";
+import { ProtocolState, ZkNoteTicket } from "@/lib/types";
 import {
   Shield,
   Flame,
@@ -17,7 +17,6 @@ import {
   Lock,
   Cpu,
   CheckCircle2,
-  RefreshCw,
   Coins,
   TrendingUp,
   Zap,
@@ -26,6 +25,8 @@ import {
   LogOut,
   ExternalLink,
 } from "lucide-react";
+import type { WalletSelector } from "@near-wallet-selector/core";
+import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 
 export default function ZiliumDashboard() {
   const [engine] = useState(() => new DeterministicZiliumEngine());
@@ -38,16 +39,13 @@ export default function ZiliumDashboard() {
     active_zk_notes: 0,
   });
 
-  // Wallet selector state
   const [walletAccountId, setWalletAccountId] = useState<string | null>(null);
-  const [walletSelector, setWalletSelector] = useState<any>(null);
-  const [walletModal, setWalletModal] = useState<any>(null);
+  const [walletSelector, setWalletSelector] = useState<WalletSelector | null>(null);
+  const [walletModal, setWalletModal] = useState<WalletSelectorModal | null>(null);
 
-  const [userBalance, setUserBalance] = useState("2000000000"); // 2,000 ZLM default
-  const [logs, setLogs] = useState<StateMachineLog[]>([]);
+  const [userBalance, setUserBalance] = useState("2000000000");
   const [activeNote, setActiveNote] = useState<ZkNoteTicket | null>(null);
 
-  // Form states
   const [recipientAgent, setRecipientAgent] = useState("zilium-agent-b.testnet");
   const [redeemAmountZlm, setRedeemAmountZlm] = useState("1000");
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -60,26 +58,25 @@ export default function ZiliumDashboard() {
     setTimeout(() => setToastMessage(null), 5000);
   };
 
-  // Initialize Wallet Selector
   useEffect(() => {
     getWalletSelector()?.then(({ selector, modal }) => {
       setWalletSelector(selector);
       setWalletModal(modal);
 
       const state = selector.store.getState();
-      const activeAccount = state.accounts.find((a: any) => a.active)?.accountId || state.accounts[0]?.accountId || null;
+      const activeAccount = state.accounts.find((a) => a.active)?.accountId || state.accounts[0]?.accountId || null;
       if (activeAccount) {
         setWalletAccountId(activeAccount);
       }
 
-      selector.store.observable.subscribe((nextState: any) => {
-        const nextAccount = nextState.accounts.find((a: any) => a.active)?.accountId || nextState.accounts[0]?.accountId || null;
+      selector.store.observable.subscribe((nextState) => {
+        const nextAccount = nextState.accounts.find((a) => a.active)?.accountId || nextState.accounts[0]?.accountId || null;
         setWalletAccountId(nextAccount);
       });
     });
   }, []);
 
-  const syncState = async () => {
+  const syncState = useCallback(async () => {
     try {
       const state = await fetchProtocolTelemetry();
       setTelemetry(state);
@@ -91,23 +88,20 @@ export default function ZiliumDashboard() {
       if (mode === "SIMULATION") {
         setTelemetry(engine.getState());
         setUserBalance(engine.getUserBalance());
-        setLogs(engine.getLogs());
       }
     }
-  };
+  }, [engine, mode, walletAccountId]);
 
   useEffect(() => {
     syncState();
-  }, [mode, walletAccountId]);
+  }, [syncState]);
 
-  // Connect Wallet Action
   const handleConnectWallet = () => {
     if (walletModal) {
       walletModal.show();
     }
   };
 
-  // Sign out Wallet Action
   const handleSignOut = async () => {
     if (walletSelector) {
       const wallet = await walletSelector.wallet();
@@ -117,7 +111,6 @@ export default function ZiliumDashboard() {
     }
   };
 
-  // Execute call via connected NEAR Wallet
   const callContractMethod = async (methodName: string, args: Record<string, unknown>, attachedYocto = "0") => {
     if (!walletSelector || !walletAccountId) {
       throw new Error("Please connect your NEAR Testnet Wallet first");
@@ -128,41 +121,40 @@ export default function ZiliumDashboard() {
       receiverId: CONTRACT_ID,
       actions: [
         {
-          type: "FunctionCall",
+          type: "FunctionCall" as const,
           params: {
             methodName,
             args,
-            gas: "100000000000000", // 100 TGas
+            gas: "100000000000000",
             deposit: attachedYocto,
           },
-        },
+        } as any,
       ],
     });
-    return outcome?.transaction?.hash || outcome?.transaction_outcome?.id || "verified";
+    return (outcome as any)?.transaction?.hash || (outcome as any)?.transaction_outcome?.id || "verified";
   };
 
-  // STEP 0: Faucet Claim
   const handleFaucet = async () => {
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
         const hash = await callContractMethod("faucet_claim", {});
         setTxHash(hash);
-        notify("Claimed 2,000 ZLM via MyNearWallet!");
+        notify("Claimed 2,000 ZLM via Connected Wallet!");
         await syncState();
       } else {
         const res = engine.faucetClaim(walletAccountId || "agent-demo.testnet");
         syncState();
         notify(res.message);
       }
-    } catch (err: any) {
-      notify(`Faucet: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      notify(`Faucet: ${message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 1: Shield Deposit
   const handleShieldDeposit = async () => {
     setLoading(true);
     try {
@@ -173,7 +165,7 @@ export default function ZiliumDashboard() {
         const hash = await callContractMethod(
           "deposit_zk_shield",
           { commitment_hex: ticket.commitmentHex },
-          "100000000000000000000000" // 0.1 NEAR
+          "100000000000000000000000"
         );
         setTxHash(hash);
         notify("ZK Note Deposited on NEAR Testnet (1% Burn + Floor Raised)!");
@@ -188,14 +180,14 @@ export default function ZiliumDashboard() {
         notify("Note Shielded: 1,000 ZLM locked, 10 ZLM burned, +0.1 NEAR backed");
       }
       setGraphStep("SHIELDED");
-    } catch (err: any) {
-      notify(`Deposit: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      notify(`Deposit: ${message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 2: Settle Intent
   const handleSettleZkIntent = async () => {
     if (!activeNote) return;
     setLoading(true);
@@ -223,14 +215,14 @@ export default function ZiliumDashboard() {
         notify(`Settled 1,000 ZLM unlinked to ${recipientAgent}`);
       }
       setGraphStep("SETTLED");
-    } catch (err: any) {
-      notify(`Settlement: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      notify(`Settlement: ${message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 3: Floor Price Redemption
   const handleRedeemFloor = async () => {
     const rawUnits = (parseFloat(redeemAmountZlm) * 1_000_000).toString();
     setLoading(true);
@@ -250,8 +242,9 @@ export default function ZiliumDashboard() {
         notify(res.message);
       }
       setGraphStep("REDEEMED");
-    } catch (err: any) {
-      notify(`Redemption: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      notify(`Redemption: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -273,7 +266,6 @@ export default function ZiliumDashboard() {
 
   return (
     <div className="min-h-screen bg-[#06080D] text-slate-100 font-mono p-4 md:p-8">
-      {/* TOAST ALERTS */}
       {toastMessage && (
         <div className="fixed top-4 right-4 z-50 bg-emerald-950 border border-emerald-500 text-emerald-200 px-4 py-3 rounded shadow-lg flex items-center gap-2 text-xs">
           <Zap className="w-4 h-4 text-emerald-400" />
@@ -302,7 +294,6 @@ export default function ZiliumDashboard() {
 
         {/* WALLET & MODE BAR */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Mode toggle */}
           <div className="flex items-center gap-1 bg-[#06080D] p-1 rounded border border-slate-800 text-xs">
             <button
               onClick={() => setMode("LIVE_TESTNET")}
@@ -326,7 +317,6 @@ export default function ZiliumDashboard() {
             </button>
           </div>
 
-          {/* Official NEAR Wallet Button */}
           {walletAccountId ? (
             <div className="flex items-center gap-2 bg-[#06080D] border border-emerald-600/60 rounded px-3 py-1.5 text-xs">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -411,33 +401,27 @@ export default function ZiliumDashboard() {
 
         <div className="w-full overflow-x-auto py-2">
           <svg viewBox="0 0 920 180" className="w-full h-40">
-            {/* Connections */}
             <line x1="160" y1="90" x2="350" y2="90" stroke={graphStep !== "IDLE" ? "#10B981" : "#334155"} strokeWidth="2.5" strokeDasharray={graphStep === "IDLE" ? "6,6" : "0"} />
             <line x1="250" y1="90" x2="440" y2="35" stroke={graphStep !== "IDLE" ? "#F43F5E" : "#334155"} strokeWidth="2" />
             <line x1="250" y1="90" x2="440" y2="145" stroke={graphStep !== "IDLE" ? "#06B6D4" : "#334155"} strokeWidth="2" />
             <line x1="530" y1="90" x2="740" y2="90" stroke={graphStep === "SETTLED" ? "#10B981" : "#334155"} strokeWidth="2.5" strokeDasharray="6,6" />
 
-            {/* Agent A */}
             <rect x="10" y="55" width="150" height="70" rx="6" fill="#06080D" stroke="#10B981" strokeWidth="1.5" />
             <text x="85" y="85" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="bold">AGENT A (Sender)</text>
             <text x="85" y="105" textAnchor="middle" fill="#94A3B8" fontSize="9">-1,010 ZLM | -0.1 NEAR</text>
 
-            {/* Burn Node */}
             <rect x="360" y="12" width="160" height="42" rx="6" fill="#1F0910" stroke="#F43F5E" strokeWidth="1.5" />
             <text x="440" y="30" textAnchor="middle" fill="#FB7185" fontSize="10" fontWeight="bold">🔥 1% SUPPLY BURN</text>
             <text x="440" y="44" textAnchor="middle" fill="#FDA4AF" fontSize="8">-10.00 ZLM Destroyed</text>
 
-            {/* ZK Shield Pool */}
             <rect x="350" y="60" width="180" height="60" rx="8" fill="#062019" stroke="#10B981" strokeWidth="2" />
             <text x="440" y="85" textAnchor="middle" fill="#34D399" fontSize="11" fontWeight="bold">ZK SHIELD DARK POOL</text>
             <text x="440" y="102" textAnchor="middle" fill="#A7F3D0" fontSize="8">H(Nullifier || Secret)</text>
 
-            {/* Floor Vault */}
             <rect x="360" y="126" width="160" height="42" rx="6" fill="#081C24" stroke="#06B6D4" strokeWidth="1.5" />
             <text x="440" y="144" textAnchor="middle" fill="#22D3EE" fontSize="10" fontWeight="bold">💎 FLOOR PRICE VAULT</text>
             <text x="440" y="158" textAnchor="middle" fill="#67E8F9" fontSize="8">+0.1 NEAR Backing</text>
 
-            {/* Agent B */}
             <rect x="740" y="55" width="160" height="70" rx="6" fill="#06080D" stroke={graphStep === "SETTLED" ? "#10B981" : "#475569"} strokeWidth="1.5" />
             <text x="820" y="85" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="bold">AGENT B (Receiver)</text>
             <text x="820" y="105" textAnchor="middle" fill="#34D399" fontSize="9">+1,000 ZLM (Unlinked)</text>
@@ -447,7 +431,6 @@ export default function ZiliumDashboard() {
 
       {/* 4 INTERACTIVE STEPS BOARD */}
       <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        {/* STEP 0: FAUCET */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -473,7 +456,6 @@ export default function ZiliumDashboard() {
           </button>
         </div>
 
-        {/* STEP 1: SHIELD DEPOSIT */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -509,7 +491,6 @@ export default function ZiliumDashboard() {
           </button>
         </div>
 
-        {/* STEP 2: UNLINKED SETTLEMENT */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -549,7 +530,6 @@ export default function ZiliumDashboard() {
           </button>
         </div>
 
-        {/* STEP 3: FLOOR REDEEM */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">

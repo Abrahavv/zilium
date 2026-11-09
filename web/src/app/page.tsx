@@ -353,7 +353,7 @@ export default function ZiliumDashboard() {
         </div>
 
         <div className="bg-[#0B0F17] border border-rose-900/30 p-4 rounded-lg">
-          <span className="text-[10px] text-rose-400 block tracking-wider uppercase mb-1 flex items-center gap-1">
+          <span className="text-[10px] text-rose-400 tracking-wider uppercase mb-1 flex items-center gap-1">
             <Flame className="w-3 h-3" /> PERMANENTLY BURNED (1%)
           </span>
           <div className="text-xl font-bold text-rose-400 tracking-tight">
@@ -363,7 +363,7 @@ export default function ZiliumDashboard() {
         </div>
 
         <div className="bg-[#0B0F17] border border-emerald-900/30 p-4 rounded-lg">
-          <span className="text-[10px] text-emerald-400 block tracking-wider uppercase mb-1 flex items-center gap-1">
+          <span className="text-[10px] text-emerald-400 tracking-wider uppercase mb-1 flex items-center gap-1">
             <TrendingUp className="w-3 h-3" /> INTRINSIC FLOOR PRICE
           </span>
           <div className="text-xl font-bold text-emerald-400 tracking-tight">
@@ -373,7 +373,7 @@ export default function ZiliumDashboard() {
         </div>
 
         <div className="bg-[#0B0F17] border border-cyan-900/30 p-4 rounded-lg">
-          <span className="text-[10px] text-cyan-400 block tracking-wider uppercase mb-1 flex items-center gap-1">
+          <span className="text-[10px] text-cyan-400 tracking-wider uppercase mb-1 flex items-center gap-1">
             <Lock className="w-3 h-3" /> ACTIVE DARK POOL NOTES
           </span>
           <div className="text-xl font-bold text-cyan-400 tracking-tight">

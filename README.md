@@ -1,13 +1,13 @@
 # Zilium Protocol ($ZLM)
 ### Deterministic Zero-Knowledge Privacy & Autonomous A2A Intent Settlement on NEAR
 
-[![NEAR Protocol](https://img.shields.io/badge/NEAR-Testnet%20Verified-00EC97?logo=near&logoColor=black)](https://testnet.nearblocks.io/address/zilium-1794254326.testnet)
+[![NEAR Protocol](https://img.shields.io/badge/NEAR-Testnet%20Verified-00EC97?logo=near&logoColor=black)](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet)
 [![Rust](https://img.shields.io/badge/Rust-near--sdk%20v5.5-orange?logo=rust)](https://github.com/near/near-sdk-rs)
 [![Next.js](https://img.shields.io/badge/Next.js-14%20App%20Router-black?logo=next.js)](https://nextjs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > **Hackathon Submission:** Evaluated strictly on the **mechanics**, not the chart.  
-> Live Contract: [`zilium-1794254326.testnet`](https://testnet.nearblocks.io/address/zilium-1794254326.testnet)
+> Live Contract: [`zilium-clean-1794256999.testnet`](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet)
 
 ---
 

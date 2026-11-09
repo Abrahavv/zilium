@@ -10,8 +10,8 @@
 
 ## 2. On-Chain Contracts & Infrastructure
 - **Network:** NEAR Testnet (`https://rpc.testnet.near.org`)
-- **Live Contract ID:** `zilium-1794254326.testnet`
-- **Explorer:** [https://testnet.nearblocks.io/address/zilium-1794254326.testnet](https://testnet.nearblocks.io/address/zilium-1794254326.testnet)
+- **Live Contract ID:** `zilium-clean-1794256999.testnet`
+- **Explorer:** [https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet)
 - **Secondary Test Agent:** `zilium-agent-b.testnet`
 - **Standards Implemented:**
   - `NEP-141`: Fungible Token Standard Core (`ft_transfer`, `ft_transfer_call`, `ft_balance_of`, `ft_total_supply`)

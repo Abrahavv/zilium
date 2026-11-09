@@ -1,8 +1,8 @@
 import { connect, keyStores, KeyPair, utils } from "near-api-js";
 import crypto from "crypto";
 
-const CONTRACT_ID = "zilium-1794254326.testnet";
-const PRIVATE_KEY = "ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E";
+const CONTRACT_ID = "zilium-clean-1794256999.testnet";
+const PRIVATE_KEY = "ed25519:3kEZ6qkASQfvhyHaLbSTHVszYBPXSq4ZFJ3XzUPDY9ZRME9Sfmn2ukosYxV8tj92UYipFhQ2SV2P2j6g3Ux4BESo";
 const RECIPIENT_ID = "zilium-agent-b.testnet";
 const RPC_URL = "https://rpc.testnet.near.org";
 
@@ -24,7 +24,12 @@ async function runCliVerification() {
 
   const keyStore = new keyStores.InMemoryKeyStore();
   await keyStore.setKey("testnet", CONTRACT_ID, KeyPair.fromString(PRIVATE_KEY));
-  await keyStore.setKey("testnet", "zilium-agent-b.testnet", KeyPair.fromString(PRIVATE_KEY));
+  // Key for zilium-agent-b.testnet (created earlier with Ato4WUepsVKugkgEFRPDPXSrwn1VEv7cUPvVQt84K3mN)
+  await keyStore.setKey(
+    "testnet",
+    "zilium-agent-b.testnet",
+    KeyPair.fromString("ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E")
+  );
   const near = await connect({ networkId: "testnet", keyStore, nodeUrl: RPC_URL });
   const account = await near.account(CONTRACT_ID);
 

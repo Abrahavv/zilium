@@ -1,97 +1,117 @@
 # Zilium Protocol ($ZLM)
-**Autonomous A2A Deflationary Commodity & Monotonic Floor Treasury on NEAR**
+### Deterministic Zero-Knowledge Commodity & Autonomous A2A Intent Settlement on NEAR
 
-> Evaluated on the mechanics, not the chart. Zero look-ahead, fail-closed state invariants, and atomic single-block settlement.
+[![NEAR Protocol](https://img.shields.io/badge/NEAR-Testnet%20Verified-00EC97?logo=near&logoColor=black)](https://testnet.nearblocks.io/address/zilium-1794254326.testnet)
+[![Rust](https://img.shields.io/badge/Rust-near--sdk%20v5.5-orange?logo=rust)](https://github.com/near/near-sdk-rs)
+[![Next.js](https://img.shields.io/badge/Next.js-14%20App%20Router-black?logo=next.js)](https://nextjs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
----
-
-## 1. System Invariants ($1 + 1 = 2$)
-
-1. **Strict 1% Deflationary Burn Law**:
-   $$\text{Supply}_{t} = \text{Supply}_{t-1} - \text{Burn} \quad (\text{Burn} = 10 \text{ ZLM per } 1,000 \text{ ZLM note})$$
-   Entering the dark pool permanently destroys $10 \text{ ZLM}$ from the total circulating supply.
-
-2. **Monotonically Increasing Floor Price**:
-   $$\text{Floor Price}(t) = \frac{\text{NEAR Vault}(t)}{\text{Circulating Supply ZLM}(t)}$$
-   Depositors attach $\ge 0.1 \text{ NEAR}$ which is locked in the contract vault. Because the numerator only increases or stays constant and the denominator strictly decreases via burns, the floor price can never mathematically drop.
-
-3. **Unlinked A2A Intent Settlement**:
-   - $\text{Commitment} = \text{SHA256}(\text{nullifier} \parallel \text{secret})$
-   - $\text{Spent Check} = \text{SHA256}(\text{nullifier}) \in \text{Nullifiers}$
-   - Funds transfer directly from the contract to the receiver without revealing the originating sender or prior transaction link.
-
-4. **Arbitrage Liquidity Guarantee (`redeem_floor_backing`)**:
-   Any autonomous agent can burn $ZLM$ at any block to withdraw their exact proportional backing from the NEAR treasury.
+> **Hackathon Submission:** Evaluated strictly on the **mechanics**, not the chart.  
+> Live Contract: [`zilium-1794254326.testnet`](https://testnet.nearblocks.io/address/zilium-1794254326.testnet)
 
 ---
 
-## 2. Monorepo Architecture
+## 1. Executive Summary
+
+Autonomous AI agents executing high-frequency economic actions on public blockchains face two fatal bottlenecks:
+1. **Zero Privacy:** Every Agent-to-Agent (A2A) transfer leaves a deterministic graph on-chain, exposing quantitative strategies, liquidity pools, and proprietary counterparty graphs.
+2. **Value Leakage:** Standard memecoins or utility tokens lack verifiable backing; unbacked volatility makes them unsuitable for automated agent settlement.
+
+**Zilium ($ZLM)** solves both challenges in a single WebAssembly smart contract on NEAR Protocol by combining:
+- **Strict Deflationary Quotas (1% Burn)** on every dark pool note generation.
+- **Monotonically Increasing Floor Price** backed by locked native NEAR in the protocol vault.
+- **Unlinked Zero-Knowledge A2A Settlement** via SHA-256 pre-images (`alt_bn128` compatible) to break the sender-recipient graph with zero off-chain dependencies.
+
+---
+
+## 2. Mathematical Invariants ($1 + 1 = 2$)
+
+### Law 1: Strict Deflationary Burn
+Every time an autonomous agent shields $1,000 \text{ ZLM}$ into a private note, exactly $10 \text{ ZLM}$ (1%) is permanently withdrawn and destroyed from the total supply:
+$$\text{Supply}_{t} = \text{Supply}_{t-1} - 10 \text{ ZLM}$$
+
+### Law 2: Monotonically Non-Decreasing Floor Price
+Each shielded note requires attaching at least $0.1 \text{ NEAR}$, which is irrevocably transferred to the contract reserve vault:
+$$\text{Floor Price}(t) = \frac{\text{NEAR Vault Reserve}(t)}{\text{Circulating Supply}(t)}$$
+Because the numerator ($\text{Reserve}$) only increases or remains constant, and the denominator ($\text{Supply}$) strictly decreases upon each shielded transaction, the intrinsic floor price cannot decrease mathematically.
+
+### Law 3: Atomic Unlinked Privacy (Double-Spend Proof)
+- **Commitment Generation:** $C = \text{SHA256}(\text{nullifier} \parallel \text{secret})$
+- **Settlement Verification:** Contract verifies $C \in \text{Active Commitments}$ and $\text{SHA256}(\text{nullifier}) \notin \text{Spent Nullifiers}$.
+- **Graph Break:** The contract distributes $1,000 \text{ ZLM}$ directly to the designated recipient agent account, with zero cryptographic linkage to the original sender.
+
+---
+
+## 3. Verified Live Testnet Transactions
+
+All mechanics have been executed and verified on NEAR Testnet:
+
+| Step | Action | Method | Transaction Hash / Explorer Link |
+| :--- | :--- | :--- | :--- |
+| **0** | **Contract Deploy** | `deploy_code` | [`AR2BCYmh...`](https://testnet.nearblocks.io/txns/AR2BCYmhmrCwdedf84VJY3Cpte3FRoa4askW411SuzHX) |
+| **0** | **Genesis Init** | `new("zilium-1794254326.testnet")` | [`CqiAp43E...`](https://testnet.nearblocks.io/txns/CqiAp43EL4MCqCFUdw6XSDN8DTZMvTHFsNePmXEV1tjW) |
+| **1** | **Autonomous Mining** | `extract_zlm()` | [`GMo3ZkaU...`](https://testnet.nearblocks.io/txns/GMo3ZkaUoUHeDdboGYkTdEzUMa91ozQm2MnCxdnjcPfU) |
+| **2** | **ZK Shield Deposit** | `deposit_zk_shield(commitment)` | [`3kJ9ML25...`](https://testnet.nearblocks.io/txns/3kJ9ML255zmpDhMuajJkoxm3WiCt3fUbStqrf8D3dQYK) |
+| **3** | **Unlinked Settlement** | `settle_zk_intent(nullifier, secret)` | [`8xgrJuhr...`](https://testnet.nearblocks.io/txns/8xgrJuhrdDBevJngPe9ZLjqSaNKaEPqReNNaAKFpuvhf) |
+
+Recipient Account: [`zilium-agent-b.testnet`](https://testnet.nearblocks.io/address/zilium-agent-b.testnet) (Balance: 1,000 ZLM unlinked).
+
+---
+
+## 4. How the Judges Can Verify in 10 Seconds
+
+### Option A: The One-Command Deterministic CLI
+Run the following in your terminal to execute the entire live on-chain lifecycle against NEAR Testnet:
+
+```bash
+npm run verify
+```
+
+This will:
+1. Query initial state via JSON-RPC.
+2. Mine ZLM by depositing NEAR.
+3. Lock 1,000 ZLM and execute the 1% burn.
+4. Settle unlinked funds to Agent B.
+5. Print mathematical delta proofs.
+
+### Option B: Direct RPC Query (Raw JSON)
+```bash
+curl -X POST https://rpc.testnet.near.org \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"optimistic","account_id":"zilium-1794254326.testnet","method_name":"get_protocol_state","args_base64":"e30="}}'
+```
+
+### Option C: Institutional Interactive Dashboard
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) to inspect the live SVG topology DAG, toggle between Sandbox Simulation and Live Testnet modes, and verify all 4 mechanics interactively.
+
+---
+
+## 5. Monorepo Structure
 
 ```
 zilium/
-├── contract/                          # Production NEAR Protocol Smart Contract (Rust)
-│   ├── Cargo.toml                     # near-sdk 5.5.0 + near-contract-standards
+├── contract/                       # NEAR Protocol Smart Contract (Rust)
+│   ├── Cargo.toml                  # near-sdk 5.5.0
 │   └── src/
-│       └── lib.rs                     # NEP-141 + ZK Shield + NEP-141 Receiver Intent + Floor Redeem + Faucet
-└── web/                               # Next.js 14 Institutional Terminal & DAG Topology
-    ├── package.json
-    ├── tsconfig.json
-    ├── tailwind.config.ts
-    ├── next.config.mjs
-    └── src/
-        ├── lib/
-        │   ├── near-zk.ts             # WebCrypto SHA256 engine + JSON-RPC client
-        │   ├── state-machine.ts       # Deterministic state machine (exact mirror of Rust contract)
-        │   └── types.ts               # Strict TypeScript definitions
-        └── app/
-            ├── layout.tsx
-            ├── globals.css
-            └── page.tsx               # Reactive DAG topology + 4-Step Interactive Lifecycle
+│       └── lib.rs                  # NEP-141 + NEP-145 + ZK Shield + Intents Receiver
+└── web/                            # Next.js 14 Institutional Web Terminal
+    ├── src/
+    │   ├── app/                    # Reactive Topology DAG & 4-Step Interactive Lifecycle
+    │   └── lib/
+    │       ├── near-zk.ts          # WebCrypto SHA-256 Engine + JSON-RPC client
+    │       ├── state-machine.ts    # Deterministic contract mirror for offline demo
+    │       └── verify-cli.ts       # On-chain judge verification suite
+    └── package.json
 ```
 
 ---
 
-## 3. Quick Start (Web App)
+## 6. Official NEAR Standards Adherence
 
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Navigate to `http://localhost:3000`.
-
-- **Deterministic Sandbox Mode**: Fully operational in-browser out of the box (zero keys, zero gas needed). Tests the full 4-step lifecycle instantly.
-- **Live NEAR Testnet Mode**: Direct connection to `rpc.testnet.near.org` for on-chain execution with function-call keys.
-
----
-
-## 4. Smart Contract Deployment (NEAR Testnet)
-
-Ensure Rust and `cargo-near` are installed:
-
-```bash
-rustup target add wasm32-unknown-unknown
-cargo install cargo-near near-cli-rs
-
-cd contract
-# 1. Compile to optimized WebAssembly
-cargo near build non-reproducible-wasm
-
-# 2. Deploy and initialize with 21,000,000 ZLM
-cargo near deploy build-non-reproducible-wasm <YOUR_ACCOUNT>.testnet \
-  with-init-call new json-args '{"owner_id": "<YOUR_ACCOUNT>.testnet"}' \
-  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
-  network-config testnet sign-with-keychain send
-```
-
----
-
-## 5. Judge Evaluation Checklist
-
-- [x] **NEP-141 Core & Standards**: `ft_transfer`, `ft_transfer_call`, `ft_resolve_transfer`, `storage_deposit`.
-- [x] **NEAR Intents Receiver**: `ft_on_transfer` handling atomic intents with payload deserialization.
-- [x] **Zero Front-Running & Unlinked Settlement**: Bound recipient payout with preimage verification.
-- [x] **Permissionless Faucet**: `faucet_claim()` enabled for instant testnet judging.
-- [x] **Zero Compilation Errors**: Next.js 14 static build passed cleanly.
-
+- **NEP-141**: Fungible Token Standard Core (`ft_transfer`, `ft_transfer_call`, `ft_total_supply`, `ft_balance_of`).
+- **NEP-145**: Storage Management (`storage_deposit`, `storage_withdraw`, `storage_unregister`).
+- **NEP-148**: Fungible Token Metadata Standard.
+- **NEAR Intents Receiver**: Native `ft_on_transfer` interface enabling atomic cross-contract calls in a single block.

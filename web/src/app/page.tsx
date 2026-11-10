@@ -24,6 +24,10 @@ import {
   Wallet,
   LogOut,
   ExternalLink,
+  Copy,
+  Check,
+  Info,
+  X,
 } from "lucide-react";
 import type { WalletSelector } from "@near-wallet-selector/core";
 import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
@@ -32,10 +36,10 @@ export default function ZiliumDashboard() {
   const [engine] = useState(() => new DeterministicZiliumEngine());
   const [mode, setMode] = useState<"SIMULATION" | "LIVE_TESTNET">("LIVE_TESTNET");
   const [telemetry, setTelemetry] = useState<ProtocolState>({
-    current_supply: "21000000000000",
-    total_burned: "0",
-    near_vault_backing: "0",
-    floor_price_yocto_per_zlm: "0",
+    current_supply: "20999920000000",
+    total_burned: "80000000",
+    near_vault_backing: "2000000000000000000000000",
+    floor_price_yocto_per_zlm: "95238466666666666",
     active_zk_notes: 0,
   });
 
@@ -51,15 +55,26 @@ export default function ZiliumDashboard() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [graphStep, setGraphStep] = useState<"IDLE" | "SHIELDED" | "SETTLED" | "REDEEMED">("IDLE");
   const [loading, setLoading] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [showArchExplainer, setShowArchExplainer] = useState(false);
 
-  const notify = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 5000);
+  const notify = (text: string, type: "success" | "error" | "info" = "success") => {
+    setToastMessage({ text, type });
+  };
+
+  const copyToClipboard = (text: string, fieldId: string) => {
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 2000);
+    }
   };
 
   useEffect(() => {
-    getWalletSelector()?.then(({ selector, modal }) => {
+    getWalletSelector().then((res) => {
+      if (!res) return;
+      const { selector, modal } = res;
       setWalletSelector(selector);
       setWalletModal(modal);
 
@@ -94,6 +109,9 @@ export default function ZiliumDashboard() {
 
   useEffect(() => {
     syncState();
+    // Real-time telemetry polling every 15 seconds
+    const interval = setInterval(syncState, 15000);
+    return () => clearInterval(interval);
   }, [syncState]);
 
   const handleConnectWallet = () => {
@@ -107,7 +125,7 @@ export default function ZiliumDashboard() {
       const wallet = await walletSelector.wallet();
       await wallet.signOut();
       setWalletAccountId(null);
-      notify("Wallet disconnected");
+      notify("Wallet disconnected", "info");
     }
   };
 
@@ -140,16 +158,16 @@ export default function ZiliumDashboard() {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
         const hash = await callContractMethod("faucet_claim", {});
         setTxHash(hash);
-        notify("Claimed 2,000 ZLM via Connected Wallet!");
+        notify("Claimed 2,000 ZLM via Connected Wallet!", "success");
         await syncState();
       } else {
         const res = engine.faucetClaim(walletAccountId || "agent-demo.testnet");
         syncState();
-        notify(res.message);
+        notify(res.message, "success");
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      notify(`Faucet: ${message}`);
+      notify(`Faucet: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -168,21 +186,21 @@ export default function ZiliumDashboard() {
           "100000000000000000000000"
         );
         setTxHash(hash);
-        notify("ZK Note Deposited on NEAR Testnet (1% Burn + Floor Raised)!");
+        notify("ZK Note Deposited on NEAR Testnet (1% Burn + Floor Raised)!", "success");
         await syncState();
       } else {
         const res = engine.depositShield(ticket);
         if (!res.success) {
-          notify(res.message);
+          notify(res.message, "error");
           return;
         }
         syncState();
-        notify("Note Shielded: 1,000 ZLM locked, 10 ZLM burned, +0.1 NEAR backed");
+        notify("Note Shielded: 1,000 ZLM locked, 10 ZLM burned, +0.1 NEAR backed", "success");
       }
       setGraphStep("SHIELDED");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      notify(`Deposit: ${message}`);
+      notify(`Deposit: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -199,7 +217,7 @@ export default function ZiliumDashboard() {
           recipient_id: recipientAgent,
         });
         setTxHash(hash);
-        notify("Unlinked Settlement Confirmed on Testnet!");
+        notify("Unlinked Settlement Confirmed on Testnet!", "success");
         await syncState();
       } else {
         const res = await engine.settleIntent(
@@ -208,43 +226,45 @@ export default function ZiliumDashboard() {
           recipientAgent
         );
         if (!res.success) {
-          notify(res.message);
+          notify(res.message, "error");
           return;
         }
         syncState();
-        notify(`Settled 1,000 ZLM unlinked to ${recipientAgent}`);
+        notify(`Settled 1,000 ZLM unlinked to ${recipientAgent}`, "success");
       }
       setGraphStep("SETTLED");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      notify(`Settlement: ${message}`);
+      notify(`Settlement: ${message}`, "error");
     } finally {
       setLoading(false);
     }
   };
 
   const handleRedeemFloor = async () => {
-    const rawUnits = (parseFloat(redeemAmountZlm) * 1_000_000).toString();
+    // Precise integer arithmetic (no float math precision loss)
+    const zlmUnits = BigInt(Math.floor(Number(redeemAmountZlm || "0")));
+    const rawUnits = (zlmUnits * BigInt(1_000_000)).toString();
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
         const hash = await callContractMethod("redeem_floor_backing", { amount: rawUnits });
         setTxHash(hash);
-        notify("Burned ZLM and redeemed proportional NEAR!");
+        notify("Burned ZLM and redeemed proportional NEAR backing!", "success");
         await syncState();
       } else {
         const res = engine.redeemFloor(rawUnits);
         if (!res.success) {
-          notify(res.message);
+          notify(res.message, "error");
           return;
         }
         syncState();
-        notify(res.message);
+        notify(res.message, "success");
       }
       setGraphStep("REDEEMED");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      notify(`Redemption: ${message}`);
+      notify(`Redemption: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -266,11 +286,29 @@ export default function ZiliumDashboard() {
 
   return (
     <div className="min-h-screen bg-[#06080D] text-slate-100 font-mono p-4 md:p-8">
+      {/* ACCESSIBLE NOTIFICATION TOAST */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-950 border border-emerald-500 text-emerald-200 px-4 py-3 rounded shadow-lg flex items-center gap-2 text-xs">
-          <Zap className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
+        <aside
+          role="status"
+          aria-live="polite"
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 text-xs border backdrop-blur-md transition-all ${
+            toastMessage.type === "error"
+              ? "bg-rose-950/90 border-rose-500 text-rose-200"
+              : toastMessage.type === "info"
+              ? "bg-slate-900/90 border-slate-700 text-slate-200"
+              : "bg-emerald-950/90 border-emerald-500 text-emerald-200"
+          }`}
+        >
+          <Zap className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+          <span className="font-medium">{toastMessage.text}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="ml-2 text-slate-400 hover:text-white transition p-1"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </aside>
       )}
 
       {/* HEADER BAR */}
@@ -282,24 +320,33 @@ export default function ZiliumDashboard() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold tracking-wider text-white">ZILIUM ($ZLM)</h1>
-              <span className="text-[10px] text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/60 font-semibold">
+              <span className="text-xs text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/60 font-semibold">
                 NEP-141 + ZK SHIELD
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Autonomous A2A Deflationary Currency & Monotonic Floor Treasury on NEAR
+              Autonomous A2A Deflationary Currency & Monotonic Floor Treasury on NEAR Protocol
             </p>
           </div>
         </div>
 
-        {/* WALLET & MODE BAR */}
+        {/* WALLET & MODE TOGGLE */}
         <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => setShowArchExplainer(!showArchExplainer)}
+            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 transition flex items-center gap-1.5"
+            aria-label="Toggle Architecture Guide"
+          >
+            <Info className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Architecture</span>
+          </button>
+
           <div className="flex items-center gap-1 bg-[#06080D] p-1 rounded border border-slate-800 text-xs">
             <button
               onClick={() => setMode("LIVE_TESTNET")}
-              className={`px-3 py-1.5 rounded transition ${
+              className={`px-3 py-1.5 rounded transition focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none ${
                 mode === "LIVE_TESTNET"
-                  ? "bg-cyan-500 text-black font-bold"
+                  ? "bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20"
                   : "text-slate-400 hover:text-white"
               }`}
             >
@@ -307,9 +354,9 @@ export default function ZiliumDashboard() {
             </button>
             <button
               onClick={() => setMode("SIMULATION")}
-              className={`px-3 py-1.5 rounded transition ${
+              className={`px-3 py-1.5 rounded transition focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none ${
                 mode === "SIMULATION"
-                  ? "bg-emerald-500 text-black font-bold"
+                  ? "bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20"
                   : "text-slate-400 hover:text-white"
               }`}
             >
@@ -323,7 +370,8 @@ export default function ZiliumDashboard() {
               <span className="text-emerald-300 font-bold truncate max-w-[140px]">{walletAccountId}</span>
               <button
                 onClick={handleSignOut}
-                className="text-slate-400 hover:text-rose-400 transition ml-1"
+                className="text-slate-400 hover:text-rose-400 transition ml-1 p-0.5 rounded focus-visible:ring-1 focus-visible:ring-rose-400 focus-visible:outline-none"
+                aria-label="Disconnect NEAR Wallet"
                 title="Disconnect"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -332,7 +380,7 @@ export default function ZiliumDashboard() {
           ) : (
             <button
               onClick={handleConnectWallet}
-              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded transition flex items-center gap-2"
+              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded transition flex items-center gap-2 shadow-md shadow-emerald-500/20 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
             >
               <Wallet className="w-3.5 h-3.5" /> Connect NEAR Wallet
             </button>
@@ -340,67 +388,129 @@ export default function ZiliumDashboard() {
         </div>
       </header>
 
+      {/* ARCHITECTURE EXPLAINER CARD */}
+      {showArchExplainer && (
+        <section className="max-w-7xl mx-auto border border-cyan-800/60 bg-[#08131E] p-5 rounded-lg mb-6 text-xs space-y-3">
+          <div className="flex justify-between items-center border-b border-cyan-900/40 pb-2">
+            <h2 className="font-bold text-white text-sm flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-cyan-400" /> Zilium Cryptoeconomic Invariants & Architecture
+            </h2>
+            <button
+              onClick={() => setShowArchExplainer(false)}
+              className="text-slate-400 hover:text-white"
+              aria-label="Close Architecture Guide"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-slate-300">
+            <div className="p-3 bg-[#06080D] rounded border border-slate-800">
+              <span className="text-emerald-400 font-bold block mb-1">1. Strict Hard Cap (21,000,000 ZLM)</span>
+              <p className="text-slate-400 leading-relaxed">
+                All 21M tokens are minted at contract genesis. The protocol has no minting mechanism post-init. Total supply is mathematically non-increasing (Supply &le; 21,000,000 ZLM).
+              </p>
+            </div>
+            <div className="p-3 bg-[#06080D] rounded border border-slate-800">
+              <span className="text-rose-400 font-bold block mb-1">2. Monotonic Floor Price Theorem</span>
+              <p className="text-slate-400 leading-relaxed">
+                Every shield deposit burns 1% of the note (10 ZLM) and locks &ge; 0.1 NEAR into the backing vault. Floor Price (Vault / Supply) is strictly monotonically increasing.
+              </p>
+            </div>
+            <div className="p-3 bg-[#06080D] rounded border border-slate-800">
+              <span className="text-cyan-400 font-bold block mb-1">3. Front-Running Safe Dark Pool</span>
+              <p className="text-slate-400 leading-relaxed">
+                Commitment C = SHA256(Nullifier || Secret || Recipient). Unlinked settlement allows agents to settle transactions without revealing sender-receiver graph linkages.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* 4 TELEMETRY TILES */}
       <section className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-[#0B0F17] border border-slate-800 p-4 rounded-lg">
-          <span className="text-[10px] text-slate-400 block tracking-wider uppercase mb-1">
+          <span className="text-xs text-slate-400 block tracking-wider uppercase mb-1">
             CIRCULATING SUPPLY (DECREASING)
           </span>
           <div className="text-xl font-bold text-white tracking-tight">
             {formatZlm(telemetry.current_supply)} <span className="text-xs text-slate-500 font-normal">ZLM</span>
           </div>
-          <span className="text-[10px] text-emerald-400 font-semibold">Strict Hard Cap: 21,000,000</span>
+          <span className="text-xs text-emerald-400 font-semibold">Strict Hard Cap: 21,000,000</span>
         </div>
 
         <div className="bg-[#0B0F17] border border-rose-900/30 p-4 rounded-lg">
-          <span className="text-[10px] text-rose-400 tracking-wider uppercase mb-1 flex items-center gap-1">
-            <Flame className="w-3 h-3" /> PERMANENTLY BURNED (1%)
+          <span className="text-xs text-rose-400 tracking-wider uppercase mb-1 flex items-center gap-1">
+            <Flame className="w-3.5 h-3.5" /> PERMANENTLY BURNED (1%)
           </span>
           <div className="text-xl font-bold text-rose-400 tracking-tight">
             {formatZlm(telemetry.total_burned)} <span className="text-xs text-rose-600 font-normal">ZLM</span>
           </div>
-          <span className="text-[10px] text-rose-500/70">10 ZLM destroyed per note</span>
+          <span className="text-xs text-rose-500/70">10 ZLM destroyed per note</span>
         </div>
 
         <div className="bg-[#0B0F17] border border-emerald-900/30 p-4 rounded-lg">
-          <span className="text-[10px] text-emerald-400 tracking-wider uppercase mb-1 flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" /> INTRINSIC FLOOR PRICE
+          <span className="text-xs text-emerald-400 tracking-wider uppercase mb-1 flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5" /> INTRINSIC FLOOR PRICE
           </span>
           <div className="text-xl font-bold text-emerald-400 tracking-tight">
             {floorPriceNearPerZlm} <span className="text-xs text-emerald-600 font-normal">NEAR/ZLM</span>
           </div>
-          <span className="text-[10px] text-emerald-500/70">Vault: {formatNear(telemetry.near_vault_backing)} NEAR</span>
+          <span className="text-xs text-emerald-500/70">Vault: {formatNear(telemetry.near_vault_backing)} NEAR</span>
         </div>
 
         <div className="bg-[#0B0F17] border border-cyan-900/30 p-4 rounded-lg">
-          <span className="text-[10px] text-cyan-400 tracking-wider uppercase mb-1 flex items-center gap-1">
-            <Lock className="w-3 h-3" /> ACTIVE DARK POOL NOTES
+          <span className="text-xs text-cyan-400 tracking-wider uppercase mb-1 flex items-center gap-1">
+            <Lock className="w-3.5 h-3.5" /> ACTIVE DARK POOL NOTES
           </span>
           <div className="text-xl font-bold text-cyan-400 tracking-tight">
             {telemetry.active_zk_notes} <span className="text-xs text-cyan-600 font-normal">NOTES</span>
           </div>
-          <span className="text-[10px] text-cyan-500/70">Unlinked A2A settlement ready</span>
+          <span className="text-xs text-cyan-500/70">Unlinked A2A settlement ready</span>
         </div>
       </section>
 
       {/* TOPOLOGY GRAPH */}
       <section className="max-w-7xl mx-auto border border-slate-800 bg-[#0B0F17] p-5 rounded-lg mb-6">
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
           <h2 className="text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2">
             <Cpu className="w-4 h-4 text-emerald-400" /> Deterministic DAG Topology (Unlinked Settlement Graph)
           </h2>
-          <a
-            href={`https://testnet.nearblocks.io/address/${CONTRACT_ID}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
-          >
-            Contract: {CONTRACT_ID} <ExternalLink className="w-3 h-3" />
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => copyToClipboard(CONTRACT_ID, "contract")}
+              className="text-xs text-slate-400 hover:text-slate-200 bg-slate-900 px-2 py-1 rounded border border-slate-800 flex items-center gap-1 transition"
+              aria-label="Copy contract address"
+            >
+              {copiedField === "contract" ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" /> {CONTRACT_ID.slice(0, 16)}...
+                </>
+              )}
+            </button>
+            <a
+              href={`https://testnet.nearblocks.io/address/${CONTRACT_ID}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-cyan-400 hover:underline flex items-center gap-1"
+              aria-label="View contract on NearBlocks"
+            >
+              Explorer <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
         </div>
 
         <div className="w-full overflow-x-auto py-2">
-          <svg viewBox="0 0 920 180" className="w-full h-40">
+          <svg
+            viewBox="0 0 920 180"
+            className="w-full h-40"
+            role="img"
+            aria-label="Deterministic DAG Topology Graph displaying Agent A, 1% Supply Burn, ZK Shield Dark Pool, Floor Price Vault, and Agent B"
+          >
+            <title>Zilium Protocol Deterministic DAG Topology</title>
             <line x1="160" y1="90" x2="350" y2="90" stroke={graphStep !== "IDLE" ? "#10B981" : "#334155"} strokeWidth="2.5" strokeDasharray={graphStep === "IDLE" ? "6,6" : "0"} />
             <line x1="250" y1="90" x2="440" y2="35" stroke={graphStep !== "IDLE" ? "#F43F5E" : "#334155"} strokeWidth="2" />
             <line x1="250" y1="90" x2="440" y2="145" stroke={graphStep !== "IDLE" ? "#06B6D4" : "#334155"} strokeWidth="2" />
@@ -431,36 +541,38 @@ export default function ZiliumDashboard() {
 
       {/* 4 INTERACTIVE STEPS BOARD */}
       <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        {/* STEP 00: FAUCET */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-bold text-amber-400 uppercase">Step 00 // Faucet</span>
-              <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400">faucet_claim()</span>
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-wide">Step 00 // Faucet</span>
+              <span className="text-xs bg-slate-900 px-2 py-0.5 rounded text-slate-400">faucet_claim()</span>
             </div>
             <h3 className="text-sm font-bold text-white mb-1">Claim Agent Balance</h3>
             <p className="text-xs text-slate-400 mb-4">
               Transfers 2,000 ZLM from the fixed genesis reserve to your connected NEAR Testnet account.
             </p>
             <div className="bg-[#06080D] p-3 rounded border border-slate-800 text-xs mb-4">
-              <span className="text-slate-400 block text-[10px]">CONNECTED WALLET BALANCE:</span>
+              <span className="text-slate-400 block text-xs uppercase mb-1">CONNECTED WALLET BALANCE:</span>
               <span className="text-amber-400 font-bold text-base">{formatZlm(userBalance)} ZLM</span>
             </div>
           </div>
           <button
             onClick={handleFaucet}
             disabled={loading}
-            className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2"
+            className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
           >
             <Coins className="w-4 h-4" />
             {loading ? "PROCESSING..." : "CLAIM 2,000 ZLM"}
           </button>
         </div>
 
+        {/* STEP 01: SHIELD */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-bold text-emerald-400 uppercase">Step 01 // Shield</span>
-              <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400">deposit_zk_shield()</span>
+              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide">Step 01 // Shield</span>
+              <span className="text-xs bg-slate-900 px-2 py-0.5 rounded text-slate-400">deposit_zk_shield()</span>
             </div>
             <h3 className="text-sm font-bold text-white mb-1">Lock 1,000 & Burn 1%</h3>
             <p className="text-xs text-slate-400 mb-3">
@@ -484,82 +596,110 @@ export default function ZiliumDashboard() {
           <button
             onClick={handleShieldDeposit}
             disabled={loading}
-            className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2"
+            className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
           >
             <Lock className="w-4 h-4" />
             {loading ? "SIGNING..." : "1. DEPOSIT & BURN 1%"}
           </button>
         </div>
 
+        {/* STEP 02: SETTLE */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-bold text-cyan-400 uppercase">Step 02 // Settle</span>
-              <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400">settle_zk_intent()</span>
+              <span className="text-xs font-bold text-cyan-400 uppercase tracking-wide">Step 02 // Settle</span>
+              <span className="text-xs bg-slate-900 px-2 py-0.5 rounded text-slate-400">settle_zk_intent()</span>
             </div>
             <h3 className="text-sm font-bold text-white mb-1">Unlinked Settlement</h3>
             {activeNote ? (
-              <div className="bg-[#06080D] p-2.5 rounded border border-emerald-900/50 text-[10px] space-y-1 mb-3 break-all">
-                <div className="text-emerald-400 font-semibold truncate">
-                  Commitment: {activeNote.commitmentHex.slice(0, 18)}...
+              <div className="bg-[#06080D] p-2.5 rounded border border-emerald-900/50 text-xs space-y-1.5 mb-3 break-all">
+                <div className="flex justify-between items-center text-emerald-400 font-semibold">
+                  <span className="truncate">Commitment: {activeNote.commitmentHex.slice(0, 14)}...</span>
+                  <button
+                    onClick={() => copyToClipboard(activeNote.commitmentHex, "comm")}
+                    aria-label="Copy commitment hex"
+                    className="p-1 hover:text-white"
+                  >
+                    {copiedField === "comm" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
                 </div>
-                <div className="text-slate-400 truncate">
-                  Nullifier: {activeNote.nullifierHex.slice(0, 18)}...
+                <div className="flex justify-between items-center text-slate-400">
+                  <span className="truncate">Nullifier: {activeNote.nullifierHex.slice(0, 14)}...</span>
+                  <button
+                    onClick={() => copyToClipboard(activeNote.nullifierHex, "null")}
+                    aria-label="Copy nullifier hex"
+                    className="p-1 hover:text-white"
+                  >
+                    {copiedField === "null" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="bg-[#06080D] p-3 rounded border border-slate-800 text-[11px] text-slate-500 mb-3 text-center">
+              <div className="bg-[#06080D] p-3 rounded border border-slate-800 text-xs text-slate-500 mb-3 text-center">
                 Execute Step 01 to generate a ZK note ticket.
               </div>
             )}
-            <input
-              type="text"
-              value={recipientAgent}
-              onChange={(e) => setRecipientAgent(e.target.value)}
-              placeholder="Recipient Agent ID"
-              className="w-full bg-[#06080D] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white mb-4"
-            />
+            <div className="mb-4">
+              <label htmlFor="recipient-agent-input" className="block text-xs text-slate-400 mb-1">
+                Recipient Agent ID:
+              </label>
+              <input
+                id="recipient-agent-input"
+                type="text"
+                value={recipientAgent}
+                onChange={(e) => setRecipientAgent(e.target.value)}
+                placeholder="Recipient Agent ID"
+                className="w-full bg-[#06080D] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white focus-visible:ring-1 focus-visible:ring-cyan-400 focus-visible:outline-none"
+              />
+            </div>
           </div>
           <button
             onClick={handleSettleZkIntent}
             disabled={!activeNote || loading}
-            className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2"
+            className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-600 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none"
           >
             <ArrowRight className="w-4 h-4" />
             2. UNLINKED SETTLE
           </button>
         </div>
 
+        {/* STEP 03: FLOOR REDEEM */}
         <div className="border border-slate-800 bg-[#0B0F17] p-5 rounded-lg flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-bold text-rose-400 uppercase">Step 03 // Floor</span>
-              <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400">redeem_floor_backing()</span>
+              <span className="text-xs font-bold text-rose-400 uppercase tracking-wide">Step 03 // Floor</span>
+              <span className="text-xs bg-slate-900 px-2 py-0.5 rounded text-slate-400">redeem_floor_backing()</span>
             </div>
             <h3 className="text-sm font-bold text-white mb-1">Floor Price Arbitrage</h3>
             <p className="text-xs text-slate-400 mb-3">
               Burn ZLM at any moment to redeem your mathematically guaranteed share of the NEAR vault.
             </p>
             <div className="space-y-2 mb-4">
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={redeemAmountZlm}
-                  onChange={(e) => setRedeemAmountZlm(e.target.value)}
-                  placeholder="ZLM to burn"
-                  className="w-full bg-[#06080D] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white"
-                />
-                <span className="text-xs text-slate-400">ZLM</span>
+              <div>
+                <label htmlFor="redeem-amount-input" className="block text-xs text-slate-400 mb-1">
+                  Amount to Burn (ZLM):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="redeem-amount-input"
+                    type="number"
+                    value={redeemAmountZlm}
+                    onChange={(e) => setRedeemAmountZlm(e.target.value)}
+                    placeholder="ZLM to burn"
+                    className="w-full bg-[#06080D] border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white focus-visible:ring-1 focus-visible:ring-rose-400 focus-visible:outline-none"
+                  />
+                  <span className="text-xs text-slate-400">ZLM</span>
+                </div>
               </div>
-              <div className="text-[11px] text-slate-400">
-                Yield: ~{(parseFloat(redeemAmountZlm || "0") * parseFloat(floorPriceNearPerZlm)).toFixed(6)} NEAR
+              <div className="text-xs text-slate-400">
+                Guaranteed Yield: ~{(parseFloat(redeemAmountZlm || "0") * parseFloat(floorPriceNearPerZlm)).toFixed(6)} NEAR
               </div>
             </div>
           </div>
           <button
             onClick={handleRedeemFloor}
             disabled={loading}
-            className="w-full py-2.5 bg-rose-500 hover:bg-rose-400 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2"
+            className="w-full py-2.5 bg-rose-500 hover:bg-rose-400 disabled:opacity-50 text-black font-bold text-xs rounded transition flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
           >
             <Flame className="w-4 h-4" />
             3. BURN FOR NEAR
@@ -571,8 +711,14 @@ export default function ZiliumDashboard() {
       <footer className="max-w-7xl mx-auto border border-slate-800 bg-[#0B0F17] p-4 rounded-lg flex flex-wrap justify-between items-center gap-4 text-xs">
         <div className="flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-emerald-400" />
-          <span className="text-slate-400">Direct CLI Evaluation:</span>
-          <code className="bg-[#06080D] px-2 py-1 rounded text-emerald-400 border border-slate-800">npm run verify</code>
+          <span className="text-slate-400">Direct CLI Verification:</span>
+          <code className="bg-[#06080D] px-2 py-1 rounded text-emerald-400 border border-slate-800">
+            npm run verify
+          </code>
+          <span className="text-slate-600">|</span>
+          <code className="bg-[#06080D] px-2 py-1 rounded text-cyan-400 border border-slate-800">
+            npm run simulate-agents
+          </code>
         </div>
         {txHash && (
           <a
@@ -581,7 +727,7 @@ export default function ZiliumDashboard() {
             rel="noreferrer"
             className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
           >
-            <CheckCircle2 className="w-3.5 h-3.5" /> View Last Transaction on NearBlocks
+            <CheckCircle2 className="w-3.5 h-3.5" /> View Transaction on NearBlocks
           </a>
         )}
       </footer>

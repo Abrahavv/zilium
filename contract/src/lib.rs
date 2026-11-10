@@ -22,6 +22,9 @@ const DEFLATION_BURN_FEE: u128 = 10_000_000;      // 10.000000 ZLM (exact 1% bur
 const SHIELD_NEAR_BACKING: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR min backing
 const FAUCET_CLAIM_AMOUNT: u128 = 2_000_000_000;  // 2,000.000000 ZLM for judges/testing
 
+/// Faucet tokens locked for 1 hour (ns)
+const FAUCET_LOCKUP_NS: u64 = 3_600_000_000_000;
+
 #[derive(BorshStorageKey)]
 #[near]
 enum StorageKey {
@@ -39,9 +42,12 @@ pub struct ZiliumProtocol {
     pub metadata: LazyOption<FungibleTokenMetadata>,
     pub commitments: UnorderedSet<Vec<u8>>,
     pub nullifiers: UnorderedSet<Vec<u8>>,
-    pub faucet_claimed: LookupMap<AccountId, bool>,
+    /// Maps account → block_timestamp_ns of claim (lockup enforcement)
+    pub faucet_claimed: LookupMap<AccountId, u64>,
     pub total_burned: u128,
     pub near_backing_vault: u128,
+    pub owner_id: AccountId,
+    pub paused: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -79,6 +85,8 @@ impl ZiliumProtocol {
             faucet_claimed: LookupMap::new(StorageKey::FaucetClaimed),
             total_burned: 0,
             near_backing_vault: 0,
+            owner_id: owner_id.clone(),
+            paused: false,
         };
         // Strict Hard Cap Invariant: Mint all 21M ZLM to the contract treasury
         this.token.internal_register_account(&current_account);
@@ -98,7 +106,8 @@ impl ZiliumProtocol {
             !self.faucet_claimed.contains_key(&caller),
             "Faucet already claimed for this account"
         );
-        self.faucet_claimed.insert(&caller, &true);
+        let now = env::block_timestamp();
+        self.faucet_claimed.insert(&caller, &now);
 
         let contract_id = env::current_account_id();
         let reserve_balance = self.token.accounts.get(&contract_id).unwrap_or(0);
@@ -116,11 +125,18 @@ impl ZiliumProtocol {
         );
     }
 
+    /// Admin: Pause / resume protocol operations
+    pub fn set_paused(&mut self, paused: bool) {
+        assert_eq!(env::predecessor_account_id(), self.owner_id, "Only owner can pause");
+        self.paused = paused;
+    }
+
     /// Autonomous Mining/Extraction Mechanism:
     /// Any agent deposits NEAR to acquire ZLM from the fixed reserve vault
     /// Strict Hard Cap: NO NEW TOKENS are minted. Supply is strictly non-increasing.
     #[payable]
     pub fn extract_zlm(&mut self) {
+        assert!(!self.paused, "Protocol is paused");
         let caller = env::predecessor_account_id();
         let attached_near = env::attached_deposit().as_yoctonear();
         assert!(attached_near > 0, "Must attach NEAR to extract ZLM");
@@ -151,6 +167,7 @@ impl ZiliumProtocol {
     /// Locks 1,000 ZLM, burns 10 ZLM (1%), and adds >= 0.1 NEAR to Floor Vault
     #[payable]
     pub fn deposit_zk_shield(&mut self, commitment_hex: String) {
+        assert!(!self.paused, "Protocol is paused");
         let agent = env::predecessor_account_id();
         let attached_near = env::attached_deposit().as_yoctonear();
         assert!(
@@ -183,23 +200,25 @@ impl ZiliumProtocol {
     }
 
     /// Step 2: Atomic Intent Settlement (Commit-Reveal with Recipient Binding)
-    /// Validates preimage SHA256(nullifier || secret) in commitments
-    /// Prevents front-running by binding nullifier_hash with recipient_id
+    /// Commitment = SHA256(nullifier || secret || recipient_id)
+    /// Front-running resistant: recipient is bound into the hash at deposit time
     pub fn settle_zk_intent(
         &mut self,
         nullifier_hex: String,
         secret_hex: String,
         recipient_id: AccountId,
     ) {
+        assert!(!self.paused, "Protocol is paused");
         let nullifier = hex::decode(&nullifier_hex).expect("Invalid nullifier hex");
         let secret = hex::decode(&secret_hex).expect("Invalid secret hex");
         assert_eq!(nullifier.len(), 32, "Nullifier must be 32 bytes");
         assert_eq!(secret.len(), 32, "Secret must be 32 bytes");
 
-        // Deterministic commitment check: SHA256(nullifier || secret)
-        let mut preimage = Vec::with_capacity(64);
+        // Front-running protection: recipient_id bound into commitment
+        let mut preimage = Vec::with_capacity(96);
         preimage.extend_from_slice(&nullifier);
         preimage.extend_from_slice(&secret);
+        preimage.extend_from_slice(recipient_id.as_str().as_bytes());
         let computed_commitment = env::sha256(&preimage);
 
         assert!(
@@ -214,8 +233,9 @@ impl ZiliumProtocol {
             "Double-spend prevented: Nullifier already settled"
         );
 
-        // Mark nullifier as spent
+        // Mark nullifier as spent + remove commitment
         self.nullifiers.insert(&nullifier_hash);
+        self.commitments.remove(&computed_commitment);
 
         // Register recipient if needed and transfer unlinked 1,000 ZLM note
         if !self.token.accounts.contains_key(&recipient_id) {
@@ -231,7 +251,18 @@ impl ZiliumProtocol {
 
     /// Step 3: Redeem Floor Backing (Burning ZLM in exchange for proportional NEAR backing)
     pub fn redeem_floor_backing(&mut self, amount: U128) -> Promise {
+        assert!(!self.paused, "Protocol is paused");
         let caller = env::predecessor_account_id();
+
+        // Sybil vault protection: faucet recipients must wait 1 hour before redeeming
+        if let Some(claim_time) = self.faucet_claimed.get(&caller) {
+            let now = env::block_timestamp();
+            assert!(
+                now >= claim_time + FAUCET_LOCKUP_NS,
+                "Sybil protection: Faucet tokens timelocked for 1 hour before floor redemption"
+            );
+        }
+
         let burn_amount = amount.0;
         assert!(burn_amount > 0, "Amount must be > 0");
 
@@ -359,7 +390,8 @@ impl FungibleTokenReceiver for ZiliumProtocol {
                 }
             }
         }
-        PromiseOrValue::Value(U128(0))
+        // Refund all tokens for unrecognized messages
+        PromiseOrValue::Value(amount)
     }
 }
 

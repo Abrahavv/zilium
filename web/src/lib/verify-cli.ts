@@ -1,17 +1,40 @@
 import { connect, keyStores, KeyPair, utils } from "near-api-js";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+
+// Load environment from .env.local or .env if running standalone
+function loadEnv() {
+  for (const file of [".env.local", ".env"]) {
+    const full = path.resolve(process.cwd(), file);
+    if (fs.existsSync(full)) {
+      const lines = fs.readFileSync(full, "utf8").split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const [k, ...v] = trimmed.split("=");
+        if (k && v.length && !process.env[k.trim()]) {
+          process.env[k.trim()] = v.join("=").trim();
+        }
+      }
+    }
+  }
+}
+loadEnv();
 
 const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.near.org";
 const RECIPIENT_ID = "zilium-agent-b.testnet";
 
-// Read from environment or fallback to ephemeral credentials
-const PRIVATE_KEY =
-  process.env.TESTNET_MASTER_KEY ||
-  "ed25519:3kEZ6qkASQfvhyHaLbSTHVszYBPXSq4ZFJ3XzUPDY9ZRME9Sfmn2ukosYxV8tj92UYipFhQ2SV2P2j6g3Ux4BESo";
-const AGENT_B_KEY =
-  process.env.TESTNET_AGENT_B_KEY ||
-  "ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E";
+// SECURITY: Private keys MUST be provided via environment variables
+const PRIVATE_KEY = process.env.TESTNET_MASTER_KEY;
+const AGENT_B_KEY = process.env.TESTNET_AGENT_B_KEY;
+
+if (!PRIVATE_KEY || !AGENT_B_KEY) {
+  console.error("ERROR: Missing required environment variables.");
+  console.error("  Set TESTNET_MASTER_KEY and TESTNET_AGENT_B_KEY in .env.local");
+  process.exit(1);
+}
 
 function formatZlm(raw: string | number): string {
   return (Number(raw) / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2 });

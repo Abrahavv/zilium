@@ -32,8 +32,8 @@ async function runAutonomousAgentCycle() {
   console.log(`[AGENT B]    ${AGENT_BETA_ID} (Autonomous Liquidity Solver)\n`);
 
   const keyStore = new keyStores.InMemoryKeyStore();
-  await keyStore.setKey("testnet", AGENT_ALPHA_ID, KeyPair.fromString(AGENT_ALPHA_KEY));
-  await keyStore.setKey("testnet", AGENT_BETA_ID, KeyPair.fromString(AGENT_BETA_KEY));
+  await keyStore.setKey("testnet", AGENT_ALPHA_ID, KeyPair.fromString(AGENT_ALPHA_KEY as any));
+  await keyStore.setKey("testnet", AGENT_BETA_ID, KeyPair.fromString(AGENT_BETA_KEY as any));
 
   const near = await connect({ networkId: "testnet", keyStore, nodeUrl: RPC_URL });
   const agentAlpha = await near.account(AGENT_ALPHA_ID);

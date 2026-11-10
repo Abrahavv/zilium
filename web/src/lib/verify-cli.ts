@@ -30,8 +30,8 @@ async function runCliVerification() {
   console.log(`[EXPLORER]   https://testnet.nearblocks.io/address/${CONTRACT_ID}\n`);
 
   const keyStore = new keyStores.InMemoryKeyStore();
-  await keyStore.setKey("testnet", CONTRACT_ID, KeyPair.fromString(PRIVATE_KEY));
-  await keyStore.setKey("testnet", RECIPIENT_ID, KeyPair.fromString(AGENT_B_KEY));
+  await keyStore.setKey("testnet", CONTRACT_ID, KeyPair.fromString(PRIVATE_KEY as any));
+  await keyStore.setKey("testnet", RECIPIENT_ID, KeyPair.fromString(AGENT_B_KEY as any));
   const near = await connect({ networkId: "testnet", keyStore, nodeUrl: RPC_URL });
   const account = await near.account(CONTRACT_ID);
 

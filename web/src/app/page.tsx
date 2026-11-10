@@ -94,6 +94,18 @@ export default function ZiliumDashboard() {
   }, []);
 
   const syncState = useCallback(async () => {
+    if (mode === "SIMULATION") {
+      const simState = engine.getState();
+      setTelemetry(simState);
+      setUserBalance(engine.getUserBalance());
+      const s = BigInt(simState.current_supply);
+      const userBal = BigInt(engine.getUserBalance());
+      const simTreasury = s > userBal ? (s - userBal).toString() : s.toString();
+      setTreasuryBalance(simTreasury);
+      setAgentBBalance("1000000000");
+      return;
+    }
+
     try {
       const [state, treasury, agentB] = await Promise.all([
         fetchProtocolTelemetry(),
@@ -108,19 +120,20 @@ export default function ZiliumDashboard() {
         setUserBalance(bal);
       }
     } catch {
-      if (mode === "SIMULATION") {
-        setTelemetry(engine.getState());
-        setUserBalance(engine.getUserBalance());
-      }
+      // Offline fallback
+      setTelemetry(engine.getState());
+      setUserBalance(engine.getUserBalance());
     }
   }, [engine, mode, walletAccountId]);
 
   useEffect(() => {
     syncState();
-    // Real-time telemetry polling every 15 seconds
-    const interval = setInterval(syncState, 15000);
-    return () => clearInterval(interval);
-  }, [syncState]);
+    // Real-time telemetry polling every 15s (Live Testnet only)
+    if (mode === "LIVE_TESTNET") {
+      const interval = setInterval(syncState, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [syncState, mode]);
 
   const handleConnectWallet = () => {
     if (walletModal) {
@@ -161,6 +174,11 @@ export default function ZiliumDashboard() {
   };
 
   const handleFaucet = async () => {
+    if (mode === "LIVE_TESTNET" && !walletAccountId) {
+      handleConnectWallet();
+      notify("Please connect your NEAR Testnet wallet first", "info");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
@@ -169,7 +187,7 @@ export default function ZiliumDashboard() {
         notify("Claimed 2,000 ZLM via Connected Wallet!", "success");
         await syncState();
       } else {
-        const res = engine.faucetClaim(walletAccountId || "agent-demo.testnet");
+        const res = engine.faucetClaim("agent-demo.testnet");
         syncState();
         notify(res.message, "success");
       }
@@ -182,6 +200,11 @@ export default function ZiliumDashboard() {
   };
 
   const handleShieldDeposit = async () => {
+    if (mode === "LIVE_TESTNET" && !walletAccountId) {
+      handleConnectWallet();
+      notify("Please connect your NEAR Testnet wallet first", "info");
+      return;
+    }
     setLoading(true);
     try {
       const ticket = await generateZkCommitment();
@@ -216,6 +239,11 @@ export default function ZiliumDashboard() {
 
   const handleSettleZkIntent = async () => {
     if (!activeNote) return;
+    if (mode === "LIVE_TESTNET" && !walletAccountId) {
+      handleConnectWallet();
+      notify("Please connect your NEAR Testnet wallet first", "info");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
@@ -250,6 +278,11 @@ export default function ZiliumDashboard() {
   };
 
   const handleRedeemFloor = async () => {
+    if (mode === "LIVE_TESTNET" && !walletAccountId) {
+      handleConnectWallet();
+      notify("Please connect your NEAR Testnet wallet first", "info");
+      return;
+    }
     // Precise integer arithmetic (no float math precision loss)
     const zlmUnits = BigInt(Math.floor(Number(redeemAmountZlm || "0")));
     const rawUnits = (zlmUnits * BigInt(1_000_000)).toString();
@@ -358,7 +391,12 @@ export default function ZiliumDashboard() {
 
           <div className="flex items-center gap-1 bg-[#06080D] p-1 rounded border border-slate-800 text-xs">
             <button
-              onClick={() => setMode("LIVE_TESTNET")}
+              onClick={() => {
+                setMode("LIVE_TESTNET");
+                setActiveNote(null);
+                setGraphStep("IDLE");
+                notify("Switched to Live NEAR Testnet", "info");
+              }}
               className={`px-3 py-1.5 rounded transition focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none ${
                 mode === "LIVE_TESTNET"
                   ? "bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20"
@@ -368,7 +406,12 @@ export default function ZiliumDashboard() {
               Live NEAR Testnet
             </button>
             <button
-              onClick={() => setMode("SIMULATION")}
+              onClick={() => {
+                setMode("SIMULATION");
+                setActiveNote(null);
+                setGraphStep("IDLE");
+                notify("Switched to Sandbox Simulation", "info");
+              }}
               className={`px-3 py-1.5 rounded transition focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none ${
                 mode === "SIMULATION"
                   ? "bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20"

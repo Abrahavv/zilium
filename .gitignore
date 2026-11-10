@@ -4,7 +4,7 @@ out/
 build/
 target/
 *.tsbuildinfo
-.env*.local
+.env*
 *.log
 .DS_Store
 

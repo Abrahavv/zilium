@@ -7,16 +7,20 @@
 import { connect, keyStores, KeyPair, utils } from "near-api-js";
 import crypto from "crypto";
 
-const CONTRACT_ID = "zilium-clean-1794256999.testnet";
-const RPC_URL = "https://rpc.testnet.near.org";
+const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.near.org";
 
 // Agent Alpha Credentials (Buyer / Sender)
 const AGENT_ALPHA_ID = "zilium-clean-1794256999.testnet";
-const AGENT_ALPHA_KEY = "ed25519:3kEZ6qkASQfvhyHaLbSTHVszYBPXSq4ZFJ3XzUPDY9ZRME9Sfmn2ukosYxV8tj92UYipFhQ2SV2P2j6g3Ux4BESo";
+const AGENT_ALPHA_KEY =
+  process.env.TESTNET_MASTER_KEY ||
+  "ed25519:3kEZ6qkASQfvhyHaLbSTHVszYBPXSq4ZFJ3XzUPDY9ZRME9Sfmn2ukosYxV8tj92UYipFhQ2SV2P2j6g3Ux4BESo";
 
 // Agent Beta Credentials (Seller / Receiver)
 const AGENT_BETA_ID = "zilium-agent-b.testnet";
-const AGENT_BETA_KEY = "ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E";
+const AGENT_BETA_KEY =
+  process.env.TESTNET_AGENT_B_KEY ||
+  "ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E";
 
 async function runAutonomousAgentCycle() {
   console.log("=========================================================================");
@@ -108,4 +112,3 @@ runAutonomousAgentCycle().catch((err) => {
   console.error("Agent simulation failed:", err);
   process.exit(1);
 });
-

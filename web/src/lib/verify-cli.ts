@@ -1,10 +1,17 @@
 import { connect, keyStores, KeyPair, utils } from "near-api-js";
 import crypto from "crypto";
 
-const CONTRACT_ID = "zilium-clean-1794256999.testnet";
-const PRIVATE_KEY = "ed25519:3kEZ6qkASQfvhyHaLbSTHVszYBPXSq4ZFJ3XzUPDY9ZRME9Sfmn2ukosYxV8tj92UYipFhQ2SV2P2j6g3Ux4BESo";
+const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.near.org";
 const RECIPIENT_ID = "zilium-agent-b.testnet";
-const RPC_URL = "https://rpc.testnet.near.org";
+
+// Read from environment or fallback to ephemeral credentials
+const PRIVATE_KEY =
+  process.env.TESTNET_MASTER_KEY ||
+  "ed25519:3kEZ6qkASQfvhyHaLbSTHVszYBPXSq4ZFJ3XzUPDY9ZRME9Sfmn2ukosYxV8tj92UYipFhQ2SV2P2j6g3Ux4BESo";
+const AGENT_B_KEY =
+  process.env.TESTNET_AGENT_B_KEY ||
+  "ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E";
 
 function formatZlm(raw: string | number): string {
   return (Number(raw) / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2 });
@@ -24,12 +31,7 @@ async function runCliVerification() {
 
   const keyStore = new keyStores.InMemoryKeyStore();
   await keyStore.setKey("testnet", CONTRACT_ID, KeyPair.fromString(PRIVATE_KEY));
-  // Key for zilium-agent-b.testnet (created earlier with Ato4WUepsVKugkgEFRPDPXSrwn1VEv7cUPvVQt84K3mN)
-  await keyStore.setKey(
-    "testnet",
-    "zilium-agent-b.testnet",
-    KeyPair.fromString("ed25519:2AWYqgpmfK3U1bZ4gEJmAzFk4udzhfrKwwxcN8FLNi5yZkojDnoF1L3t2zFS8oZtwnUUW6yJp3U69cympgTKhL7E")
-  );
+  await keyStore.setKey("testnet", RECIPIENT_ID, KeyPair.fromString(AGENT_B_KEY));
   const near = await connect({ networkId: "testnet", keyStore, nodeUrl: RPC_URL });
   const account = await near.account(CONTRACT_ID);
 
@@ -44,9 +46,7 @@ async function runCliVerification() {
 
   // 2. Autonomous Extraction (Mining ZLM with 0.2 NEAR)
   console.log(">>> [STEP 1] AUTONOMOUS EXTRACTION (Mining ZLM by locking 0.2 NEAR in Vault)...");
-  // Register and fund a distinct buyer agent account so sender != receiver
-  const buyerAgentId = "zilium-agent-b.testnet";
-  const buyerAccount = await near.account(buyerAgentId);
+  const buyerAccount = await near.account(RECIPIENT_ID);
   const extractTx = await buyerAccount.functionCall({
     contractId: CONTRACT_ID,
     methodName: "extract_zlm",
@@ -104,4 +104,3 @@ runCliVerification().catch((err) => {
   console.error("CLI Execution failed:", err);
   process.exit(1);
 });
-

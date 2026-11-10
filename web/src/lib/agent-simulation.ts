@@ -29,7 +29,7 @@ function loadEnv() {
 loadEnv();
 
 const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.near.org";
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://test.rpc.fastnear.com";
 
 // Agent Alpha Credentials (Buyer / Sender)
 const AGENT_ALPHA_ID = "zilium-clean-1794256999.testnet";

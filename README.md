@@ -78,7 +78,7 @@ This will:
 
 ### Option B: Direct RPC Query (Raw JSON)
 ```bash
-curl -X POST https://rpc.testnet.near.org \
+curl -X POST https://test.rpc.fastnear.com \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"optimistic","account_id":"zilium-1794254326.testnet","method_name":"get_protocol_state","args_base64":"e30="}}'
 ```

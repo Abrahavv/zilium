@@ -49,6 +49,7 @@ export default function ZiliumDashboard() {
 
   const [userBalance, setUserBalance] = useState("2000000000");
   const [treasuryBalance, setTreasuryBalance] = useState("20979920000000");
+  const [agentBBalance, setAgentBBalance] = useState("20000000000");
   const [activeNote, setActiveNote] = useState<ZkNoteTicket | null>(null);
 
   const [recipientAgent, setRecipientAgent] = useState("zilium-agent-b.testnet");
@@ -94,12 +95,14 @@ export default function ZiliumDashboard() {
 
   const syncState = useCallback(async () => {
     try {
-      const [state, treasury] = await Promise.all([
+      const [state, treasury, agentB] = await Promise.all([
         fetchProtocolTelemetry(),
         fetchTokenBalance(CONTRACT_ID),
+        fetchTokenBalance("zilium-agent-b.testnet"),
       ]);
       setTelemetry(state);
       setTreasuryBalance(treasury);
+      setAgentBBalance(agentB);
       if (walletAccountId) {
         const bal = await fetchTokenBalance(walletAccountId);
         setUserBalance(bal);
@@ -526,7 +529,7 @@ export default function ZiliumDashboard() {
           </div>
 
           <div className="bg-[#0B0F17] p-3.5 rounded border border-slate-800">
-            <span className="text-xs text-rose-400 uppercase tracking-wider block mb-1 flex items-center gap-1">
+            <span className="text-xs text-rose-400 uppercase tracking-wider mb-1 flex items-center gap-1">
               <Flame className="w-3.5 h-3.5" /> 3. PERMANENTLY DESTROYED
             </span>
             <div className="text-lg font-bold text-rose-400">
@@ -621,6 +624,64 @@ export default function ZiliumDashboard() {
             <text x="820" y="85" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="bold">AGENT B (Receiver)</text>
             <text x="820" y="105" textAnchor="middle" fill="#34D399" fontSize="9">+1,000 ZLM (Unlinked)</text>
           </svg>
+        </div>
+
+        {/* TWO INDEPENDENT AGENT WALLETS ON TESTNET */}
+        <div className="mt-4 pt-4 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-[#06080D] p-3.5 rounded border border-emerald-900/40">
+            <div className="flex justify-between items-center mb-1.5">
+              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Agent Alpha (Sender Wallet)
+              </span>
+              <span className="text-xs bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800/60 font-semibold">
+                Private Intelligence
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mb-2">
+              Autonomous agent with its own ed25519 keypair. Enters ZK dark pool by locking 1,000 ZLM and burning 1% (10 ZLM).
+            </p>
+            <div className="flex justify-between items-center text-xs bg-[#0B0F17] p-2 rounded border border-slate-800">
+              <span className="text-slate-400 truncate max-w-[200px]">{CONTRACT_ID}</span>
+              <a
+                href={`https://testnet.nearblocks.io/address/${CONTRACT_ID}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                Explorer <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+
+          <div className="bg-[#06080D] p-3.5 rounded border border-cyan-900/40">
+            <div className="flex justify-between items-center mb-1.5">
+              <span className="text-xs font-bold text-cyan-400 uppercase tracking-wide flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                Agent Beta (Receiver Wallet)
+              </span>
+              <span className="text-xs bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded border border-cyan-800/60 font-semibold">
+                Liquidity Solver
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mb-2">
+              Independent testnet wallet with zero counterparty link. Receives atomic payouts with zero on-chain graph trail.
+            </p>
+            <div className="flex justify-between items-center text-xs bg-[#0B0F17] p-2 rounded border border-slate-800">
+              <div className="flex items-center gap-2 truncate max-w-[220px]">
+                <span className="text-slate-400 truncate">zilium-agent-b.testnet</span>
+                <span className="text-amber-400 font-bold">({formatZlm(agentBBalance)} ZLM)</span>
+              </div>
+              <a
+                href="https://testnet.nearblocks.io/address/zilium-agent-b.testnet"
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                Explorer <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 

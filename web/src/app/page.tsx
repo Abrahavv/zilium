@@ -625,38 +625,41 @@ export default function ZiliumDashboard() {
             {/* STEP 01: SHIELD & BURN */}
             <div className="bg-[#0A0D14] border border-white/[0.08] p-5 rounded-xl flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-3">
                   <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Step 02 // Shield</span>
-                  <span className="text-[10px] bg-white/[0.04] px-2 py-0.5 rounded text-slate-400">deposit_zk_shield()</span>
+                  <span className="text-[10px] bg-white/[0.04] px-2 py-0.5 rounded text-cyan-400 font-mono">intents.near</span>
                 </div>
                 <h3 className="text-sm font-bold text-white mb-1">Select Note Tier & Burn</h3>
+                <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                  Lock ZLM note, burn 1% permanently, and deposit NEAR into backing vault.
+                </p>
                 
                 {/* TIER PICKER BUTTONS */}
-                <div className="grid grid-cols-3 gap-1 bg-[#06080D] p-1 rounded-lg border border-white/[0.08] mb-3 text-[10px]">
+                <div className="grid grid-cols-3 gap-1.5 bg-[#06080D] p-1 rounded-lg border border-white/[0.08] mb-3 text-[10px]">
                   <button
                     type="button"
                     onClick={() => setSelectedTier(1)}
-                    className={`py-1 rounded font-bold transition ${selectedTier === 1 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
+                    className={`py-1.5 rounded font-bold transition ${selectedTier === 1 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
                   >
                     10 ZLM
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedTier(2)}
-                    className={`py-1 rounded font-bold transition ${selectedTier === 2 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
+                    className={`py-1.5 rounded font-bold transition ${selectedTier === 2 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
                   >
                     100 ZLM
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedTier(3)}
-                    className={`py-1 rounded font-bold transition ${selectedTier === 3 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
+                    className={`py-1.5 rounded font-bold transition ${selectedTier === 3 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
                   >
                     1,000 ZLM
                   </button>
                 </div>
 
-                <div className="bg-[#06080D] p-3 rounded-lg border border-white/[0.06] text-xs space-y-1.5 mb-3">
+                <div className="bg-[#06080D] p-3 rounded-lg border border-white/[0.06] text-xs space-y-1.5 mb-4">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Shield Note:</span>
                     <span className="text-white font-bold">{TIER_DETAILS[selectedTier].note}.00 ZLM</span>
@@ -669,14 +672,10 @@ export default function ZiliumDashboard() {
                     <span className="text-cyan-400">NEAR Backing:</span>
                     <span className="text-cyan-400 font-bold">+{TIER_DETAILS[selectedTier].near} NEAR</span>
                   </div>
-                  <div className="flex justify-between border-t border-white/[0.06] pt-1">
-                    <span className="text-slate-500 text-[10px]">Required:</span>
+                  <div className="flex justify-between border-t border-white/[0.06] pt-1.5">
+                    <span className="text-slate-500 text-[10px]">Total Required:</span>
                     <span className="text-emerald-300 font-bold text-[10px]">{TIER_DETAILS[selectedTier].totalZlm} ZLM</span>
                   </div>
-                </div>
-
-                <div className="text-[10px] text-cyan-400/80 bg-cyan-950/20 border border-cyan-800/40 px-2 py-1 rounded text-center mb-4">
-                  Multi-Chain Atomic Intent: Compatible with intents.near
                 </div>
               </div>
               <button

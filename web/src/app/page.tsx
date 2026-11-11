@@ -41,6 +41,31 @@ import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 
 type ActiveTab = "TERMINAL" | "ATTACK_SIM" | "TELEMETRY";
 
+function parseNearError(err: unknown): string {
+  if (!err) return "Unknown transaction error";
+  const str = err instanceof Error ? err.message : String(err);
+
+  if (str.includes("Faucet already claimed")) {
+    return "Faucet already claimed for this account. You have tokens and can proceed to Step 02 (Shield).";
+  }
+  if (str.includes("doesn't have enough balance") || str.includes("not enough balance")) {
+    return "Insufficient ZLM balance. Please check your available balance or click MAX.";
+  }
+  if (str.includes("Faucet tokens timelocked")) {
+    return "Sybil protection: Faucet tokens are timelocked before floor redemption.";
+  }
+  if (str.includes("User rejected") || str.includes("user rejected") || str.includes("cancelled")) {
+    return "Transaction cancelled in wallet.";
+  }
+
+  const match = str.match(/ExecutionError":"Smart contract panicked: (?:panicked at [^:]+:\d+:\d+:\n)?([^"\\]+)/);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  return str.length > 120 ? str.slice(0, 120) + "..." : str;
+}
+
 export default function ZiliumDashboard() {
   const [engine] = useState(() => new DeterministicZiliumEngine());
   const [activeTab, setActiveTab] = useState<ActiveTab>("TERMINAL");
@@ -201,6 +226,11 @@ export default function ZiliumDashboard() {
       notify("Please connect your NEAR Testnet wallet first", "info");
       return;
     }
+    const currentBal = BigInt(userBalance || "0");
+    if (currentBal >= BigInt("2000000000")) {
+      notify("You already have 2,000 ZLM in your wallet. You can proceed directly to Step 02 (Shield).", "info");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
@@ -208,14 +238,14 @@ export default function ZiliumDashboard() {
         setTxHash(hash);
         notify("Claimed 2,000 ZLM via Connected Wallet", "success");
         await syncState();
+        setTimeout(syncState, 2000);
       } else {
         const res = engine.faucetClaim("agent-demo.testnet");
         syncState();
         notify(res.message, "success");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notify(`Faucet: ${message}`, "error");
+      notify(parseNearError(err), "error");
     } finally {
       setLoading(false);
     }
@@ -225,6 +255,12 @@ export default function ZiliumDashboard() {
     if (mode === "LIVE_TESTNET" && !walletAccountId) {
       handleConnectWallet();
       notify("Please connect your NEAR Testnet wallet first", "info");
+      return;
+    }
+    const currentBal = BigInt(userBalance || "0");
+    if (currentBal < BigInt("1010000000")) {
+      const avail = (Number(currentBal) / 1_000_000).toFixed(2);
+      notify(`Insufficient balance. Step 02 requires 1,010 ZLM (you have ${avail} ZLM). Claim from Faucet first.`, "error");
       return;
     }
     setLoading(true);
@@ -241,6 +277,7 @@ export default function ZiliumDashboard() {
         setTxHash(hash);
         notify("ZK Note Deposited on NEAR Testnet (1% Burn + Floor Raised)", "success");
         await syncState();
+        setTimeout(syncState, 2000);
       } else {
         const res = engine.depositShield(ticket);
         if (!res.success) {
@@ -251,8 +288,7 @@ export default function ZiliumDashboard() {
         notify("Note Shielded: 1,000 ZLM locked, 10 ZLM burned, +0.1 NEAR backed", "success");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notify(`Deposit: ${message}`, "error");
+      notify(parseNearError(err), "error");
     } finally {
       setLoading(false);
     }
@@ -276,6 +312,7 @@ export default function ZiliumDashboard() {
         setTxHash(hash);
         notify("Unlinked Settlement Confirmed on Testnet", "success");
         await syncState();
+        setTimeout(syncState, 2000);
       } else {
         const res = await engine.settleIntent(
           activeNote.nullifierHex,
@@ -290,8 +327,7 @@ export default function ZiliumDashboard() {
         notify(`Settled 1,000 ZLM unlinked to ${recipientAgent}`, "success");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notify(`Settlement: ${message}`, "error");
+      notify(parseNearError(err), "error");
     } finally {
       setLoading(false);
     }
@@ -303,8 +339,21 @@ export default function ZiliumDashboard() {
       notify("Please connect your NEAR Testnet wallet first", "info");
       return;
     }
+    const currentBal = BigInt(userBalance || "0");
     const zlmUnits = BigInt(Math.floor(Number(redeemAmountZlm || "0")));
     const rawUnits = (zlmUnits * BigInt(1_000_000)).toString();
+
+    if (zlmUnits <= BigInt(0)) {
+      notify("Please enter an amount greater than 0 ZLM", "error");
+      return;
+    }
+
+    if (BigInt(rawUnits) > currentBal) {
+      const avail = (Number(currentBal) / 1_000_000).toFixed(2);
+      notify(`Insufficient balance. You have ${avail} ZLM available to burn.`, "error");
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
@@ -312,6 +361,7 @@ export default function ZiliumDashboard() {
         setTxHash(hash);
         notify("Burned ZLM and redeemed proportional NEAR backing", "success");
         await syncState();
+        setTimeout(syncState, 2000);
       } else {
         const res = engine.redeemFloor(rawUnits);
         if (!res.success) {
@@ -322,8 +372,7 @@ export default function ZiliumDashboard() {
         notify(res.message, "success");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notify(`Redemption: ${message}`, "error");
+      notify(parseNearError(err), "error");
     } finally {
       setLoading(false);
     }
@@ -565,7 +614,11 @@ export default function ZiliumDashboard() {
                 className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold text-xs rounded-lg transition flex items-center justify-center gap-2"
               >
                 <Coins className="w-4 h-4" />
-                {loading ? "Processing..." : "Claim 2,000 ZLM"}
+                {loading
+                  ? "Processing..."
+                  : BigInt(userBalance || "0") >= BigInt("2000000000")
+                  ? "Claimed (2,000 ZLM Ready)"
+                  : "Claim 2,000 ZLM"}
               </button>
             </div>
 
@@ -690,11 +743,20 @@ export default function ZiliumDashboard() {
                         placeholder="ZLM to burn"
                         className="w-full bg-[#06080D] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-white focus-visible:outline-none focus-visible:border-rose-400"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setRedeemAmountZlm(Math.floor(Number(userBalance) / 1_000_000).toString())}
+                        className="px-2 py-1.5 bg-white/[0.06] hover:bg-white/[0.12] text-rose-300 font-bold text-[10px] rounded border border-white/[0.1] transition"
+                        title="Use maximum available balance"
+                      >
+                        MAX
+                      </button>
                       <span className="text-xs text-slate-400">ZLM</span>
                     </div>
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Guaranteed Value: ~{(parseFloat(redeemAmountZlm || "0") * parseFloat(floorPriceNearPerZlm)).toFixed(6)} NEAR
+                  <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1">
+                    <span>Available: {formatZlm(userBalance)} ZLM</span>
+                    <span>Value: ~{(parseFloat(redeemAmountZlm || "0") * parseFloat(floorPriceNearPerZlm)).toFixed(6)} NEAR</span>
                   </div>
                 </div>
               </div>

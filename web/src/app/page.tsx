@@ -36,7 +36,6 @@ import {
   Layers,
 } from "lucide-react";
 import type { WalletSelector } from "@near-wallet-selector/core";
-import { actionCreators } from "@near-wallet-selector/core";
 import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 
 type ActiveTab = "TERMINAL" | "ATTACK_SIM" | "TELEMETRY";
@@ -204,6 +203,7 @@ export default function ZiliumDashboard() {
     if (!walletSelector || !walletAccountId) {
       throw new Error("Please connect your NEAR Testnet Wallet first");
     }
+    const { actionCreators } = await import("@near-wallet-selector/core");
     const wallet = await walletSelector.wallet();
     const outcome = await wallet.signAndSendTransaction({
       signerId: walletAccountId,

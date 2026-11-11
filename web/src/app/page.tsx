@@ -28,6 +28,11 @@ import {
   Check,
   Info,
   X,
+  Swords,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  ShieldAlert,
 } from "lucide-react";
 import type { WalletSelector } from "@near-wallet-selector/core";
 import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
@@ -60,6 +65,9 @@ export default function ZiliumDashboard() {
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showArchExplainer, setShowArchExplainer] = useState(false);
+  const [battleMode, setBattleMode] = useState(false);
+  const [attackStep, setAttackStep] = useState<"IDLE" | "TRANSMITTING" | "INTERCEPTED" | "RESOLVED">("IDLE");
+  const [isSimulatingAttack, setIsSimulatingAttack] = useState(false);
 
   const notify = (text: string, type: "success" | "error" | "info" = "success") => {
     setToastMessage({ text, type });
@@ -71,6 +79,22 @@ export default function ZiliumDashboard() {
       setCopiedField(fieldId);
       setTimeout(() => setCopiedField(null), 2000);
     }
+  };
+
+  const runParallelAttackSimulation = async () => {
+    setBattleMode(true);
+    setIsSimulatingAttack(true);
+    setAttackStep("TRANSMITTING");
+    notify("Simulating parallel negotiation: Agent Alpha -> Agent Beta", "info");
+
+    await new Promise((r) => setTimeout(r, 1200));
+    setAttackStep("INTERCEPTED");
+    notify("⚠️ Mempool bot intercepted cleartext x402 payload!", "error");
+
+    await new Promise((r) => setTimeout(r, 1500));
+    setAttackStep("RESOLVED");
+    setIsSimulatingAttack(false);
+    notify("Zilium settlement confirmed with 0% leak. x402 front-run complete.", "success");
   };
 
   useEffect(() => {
@@ -381,6 +405,26 @@ export default function ZiliumDashboard() {
         {/* WALLET & MODE TOGGLE */}
         <div className="flex items-center gap-3 flex-wrap">
           <button
+            onClick={runParallelAttackSimulation}
+            disabled={isSimulatingAttack}
+            className={`px-3 py-1.5 rounded transition flex items-center gap-1.5 font-bold text-xs shadow-md focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none ${
+              battleMode
+                ? "bg-rose-500 hover:bg-rose-400 text-black shadow-rose-500/20"
+                : "bg-slate-900 hover:bg-slate-800 text-rose-400 border border-rose-500/40"
+            }`}
+            aria-label="Run Parallel Attack Simulation"
+          >
+            <Swords className="w-3.5 h-3.5" />
+            <span>
+              {isSimulatingAttack
+                ? "Attacking..."
+                : battleMode
+                ? "Re-Run Attack Battle"
+                : "Parallel Simulation: x402 vs Zilium ZK"}
+            </span>
+          </button>
+
+          <button
             onClick={() => setShowArchExplainer(!showArchExplainer)}
             className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 transition flex items-center gap-1.5"
             aria-label="Toggle Architecture Guide"
@@ -484,7 +528,213 @@ export default function ZiliumDashboard() {
         </section>
       )}
 
-      {/* 4 TELEMETRY TILES (ZERO REDUNDANCY) */}
+      {/* SPLIT-SCREEN BATTLE MODE: STANDARD x402 vs ZILIUM ZK SHIELD */}
+      {battleMode && (
+        <section className="max-w-7xl mx-auto border border-slate-700 bg-[#070A10] p-5 rounded-lg mb-6 shadow-2xl">
+          <div className="flex flex-wrap justify-between items-center mb-4 pb-3 border-b border-slate-800 gap-3">
+            <div className="flex items-center gap-2">
+              <Swords className="w-5 h-5 text-rose-400 animate-pulse" />
+              <div>
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  Parallel A2A Attack Simulation: Standard x402 vs. Zilium ZK Dark Pool
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Simulating Agent Alpha (Quant Fund) paying Agent Beta (Alpha Inference Provider) in real time
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs px-2.5 py-1 rounded font-bold uppercase border ${
+                attackStep === "TRANSMITTING"
+                  ? "bg-amber-950/80 border-amber-600 text-amber-300 animate-pulse"
+                  : attackStep === "INTERCEPTED"
+                  ? "bg-rose-950/80 border-rose-600 text-rose-300 animate-pulse"
+                  : attackStep === "RESOLVED"
+                  ? "bg-emerald-950/80 border-emerald-600 text-emerald-300"
+                  : "bg-slate-900 border-slate-700 text-slate-400"
+              }`}>
+                {attackStep === "IDLE" && "Status: Standby"}
+                {attackStep === "TRANSMITTING" && "Status: T+0ms Packets In Flight"}
+                {attackStep === "INTERCEPTED" && "Status: T+1.2s Mempool Intercepted"}
+                {attackStep === "RESOLVED" && "Status: T+2.5s Attack Resolved"}
+              </span>
+              <button
+                onClick={() => setBattleMode(false)}
+                className="text-slate-400 hover:text-white p-1"
+                aria-label="Close Battle Mode"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* LEFT PANEL: STANDARD x402 (RED / AMBER VULNERABILITY) */}
+            <div className="bg-[#12070A] border border-rose-900/60 p-4 rounded-lg flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs font-bold text-rose-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-rose-400" />
+                    Standard HTTP x402 (Web2 / Cleartext Settlement)
+                  </span>
+                  <span className="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded border border-rose-800 font-bold">
+                    MEV EXPOSED
+                  </span>
+                </div>
+
+                {/* EXPOSED x402 GRAPH */}
+                <div className="bg-[#0A0406] p-3 rounded border border-rose-950 mb-4 overflow-x-auto">
+                  <svg viewBox="0 0 440 80" className="w-full h-20">
+                    <line x1="90" y1="40" x2="200" y2="40" stroke="#EF4444" strokeWidth="2" strokeDasharray="4,4" className={attackStep !== "IDLE" ? "animate-pulse" : ""} />
+                    <line x1="240" y1="40" x2="350" y2="40" stroke="#EF4444" strokeWidth="2" />
+                    
+                    <rect x="10" y="15" width="80" height="50" rx="4" fill="#1A0A0E" stroke="#EF4444" strokeWidth="1.5" />
+                    <text x="50" y="38" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold">Agent Alpha</text>
+                    <text x="50" y="52" textAnchor="middle" fill="#FDA4AF" fontSize="7">0x71C3...98</text>
+
+                    <circle cx="220" cy="40" r="18" fill="#2E0E15" stroke="#F43F5E" strokeWidth="1.5" />
+                    <text x="220" y="43" textAnchor="middle" fill="#FDA4AF" fontSize="7" fontWeight="bold">x402 Host</text>
+
+                    <rect x="350" y="15" width="80" height="50" rx="4" fill="#1A0A0E" stroke="#EF4444" strokeWidth="1.5" />
+                    <text x="390" y="38" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold">Agent Beta</text>
+                    <text x="390" y="52" textAnchor="middle" fill="#FDA4AF" fontSize="7">0x9B42...11</text>
+                  </svg>
+                  <span className="text-[10px] text-rose-400/80 block text-center font-mono">
+                    ⚠ Cleartext HTTP 402 facilitator leaks 1:1 sender-receiver graph linkage
+                  </span>
+                </div>
+
+                {/* MEMPOOL SNIFFER INSPECTOR */}
+                <div className="bg-[#0A0406] p-3 rounded border border-rose-900/50 text-xs space-y-1.5 mb-4 font-mono">
+                  <span className="text-[10px] text-rose-300 font-bold uppercase block mb-1 flex items-center gap-1">
+                    <Eye className="w-3.5 h-3.5 text-rose-400" /> Intercepted Strategy Payload (Sniffer Output)
+                  </span>
+                  <div className="flex justify-between border-b border-rose-950/60 pb-1">
+                    <span className="text-slate-400">Target Endpoint:</span>
+                    <span className="text-rose-300 font-bold">/v1/alpha/orderflow-imbalance</span>
+                  </div>
+                  <div className="flex justify-between border-b border-rose-950/60 pb-1">
+                    <span className="text-slate-400">Buyer Wallet Identity:</span>
+                    <span className="text-rose-300 font-bold truncate max-w-[180px]">0x71C3a98... (Quant Fund A)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-rose-950/60 pb-1">
+                    <span className="text-slate-400">Polling Cadence:</span>
+                    <span className="text-amber-400 font-bold">Every 4.0s (High-Frequency Leak)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-rose-950/60 pb-1">
+                    <span className="text-slate-400">Remaining Budget:</span>
+                    <span className="text-rose-300">$4,250.00 USDC (Probed)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Strategy Classification:</span>
+                    <span className="text-rose-400 font-bold">NEAR-SOL Cross-Orderflow Arbitrage</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* MEV ALERT BANNER */}
+              <div className="bg-rose-950/90 border border-rose-500/80 p-3 rounded text-xs text-rose-200 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-rose-300">
+                    {attackStep === "RESOLVED"
+                      ? "⚠️ FRONT-RUN EXECUTED: Intent Hijacked"
+                      : "MEV Searcher Vulnerability Window"}
+                  </span>
+                  <p className="text-[11px] text-rose-200/90 leading-tight mt-0.5">
+                    {attackStep === "RESOLVED"
+                      ? "Predatory bot intercepted payload in mempool, outbid Agent A by +2%, and acquired exclusive orderflow feed ahead of Agent A."
+                      : "Cleartext HTTP 402 allows any validator, RPC provider, or sniffer bot to front-run the trade before settlement."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT PANEL: ZILIUM PROTOCOL $ZLM (EMERALD / CYAN SHIELDED) */}
+            <div className="bg-[#051410] border border-emerald-900/60 p-4 rounded-lg flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-emerald-400" />
+                    Zilium Protocol ($ZLM Zero-Knowledge Dark Pool)
+                  </span>
+                  <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800 font-bold">
+                    AIR-GAP SHIELDED
+                  </span>
+                </div>
+
+                {/* AIR-GAP ZK GRAPH */}
+                <div className="bg-[#030C0A] p-3 rounded border border-emerald-950 mb-4 overflow-x-auto">
+                  <svg viewBox="0 0 440 80" className="w-full h-20">
+                    <line x1="90" y1="40" x2="160" y2="40" stroke="#10B981" strokeWidth="2" />
+                    <line x1="220" y1="40" x2="250" y2="40" stroke="#06B6D4" strokeWidth="2" strokeDasharray="2,3" />
+                    <line x1="310" y1="40" x2="350" y2="40" stroke="#10B981" strokeWidth="2" />
+                    
+                    <rect x="10" y="15" width="80" height="50" rx="4" fill="#081F17" stroke="#10B981" strokeWidth="1.5" />
+                    <text x="50" y="38" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold">Agent Alpha</text>
+                    <text x="50" y="52" textAnchor="middle" fill="#6EE7B7" fontSize="7">-1,010 ZLM</text>
+
+                    <rect x="160" y="20" width="60" height="40" rx="4" fill="#03251D" stroke="#10B981" strokeWidth="1.5" />
+                    <text x="190" y="38" textAnchor="middle" fill="#34D399" fontSize="8" fontWeight="bold">1% Burn</text>
+                    <text x="190" y="49" textAnchor="middle" fill="#A7F3D0" fontSize="6">+0.1 NEAR</text>
+
+                    <rect x="245" y="22" width="70" height="36" rx="4" fill="#041B24" stroke="#06B6D4" strokeWidth="1.5" strokeDasharray="3,3" />
+                    <text x="280" y="37" textAnchor="middle" fill="#22D3EE" fontSize="7" fontWeight="bold">AIR-GAP</text>
+                    <text x="280" y="48" textAnchor="middle" fill="#67E8F9" fontSize="6">ZK Note</text>
+
+                    <rect x="350" y="15" width="80" height="50" rx="4" fill="#081F17" stroke="#10B981" strokeWidth="1.5" />
+                    <text x="390" y="38" textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold">Agent Beta</text>
+                    <text x="390" y="52" textAnchor="middle" fill="#6EE7B7" fontSize="7">+1,000 ZLM</text>
+                  </svg>
+                  <span className="text-[10px] text-cyan-400/80 block text-center font-mono">
+                    ✓ Cryptographic air-gap: settlement payout originates directly from contract vault
+                  </span>
+                </div>
+
+                {/* ON-CHAIN INSPECTOR: WHAT PUBLIC BLOCKCHAIN SEES */}
+                <div className="bg-[#030C0A] p-3 rounded border border-emerald-900/50 text-xs space-y-1.5 mb-4 font-mono">
+                  <span className="text-[10px] text-emerald-300 font-bold uppercase block mb-1 flex items-center gap-1">
+                    <EyeOff className="w-3.5 h-3.5 text-cyan-400" /> What the Public Blockchain Sees on Agent Beta
+                  </span>
+                  <div className="flex justify-between border-b border-emerald-950/60 pb-1">
+                    <span className="text-slate-400">Sender Account:</span>
+                    <span className="text-emerald-300 font-bold">UNLINKED (Zero-Knowledge Dark Note)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-emerald-950/60 pb-1">
+                    <span className="text-slate-400">Strategy / API Metadata:</span>
+                    <span className="text-cyan-300 font-bold">ENCRYPTED / NONE (0 Bytes Leaked)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-emerald-950/60 pb-1">
+                    <span className="text-slate-400">Front-Running Risk:</span>
+                    <span className="text-emerald-400 font-bold">0.00% (Recipient Bound in Hash C)</span>
+                  </div>
+                  <div className="flex justify-between border-b border-emerald-950/60 pb-1">
+                    <span className="text-slate-400">Floor Price Impact:</span>
+                    <span className="text-emerald-400 font-bold">+0.00014 NEAR (Strictly Monotonic)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Execution Latency:</span>
+                    <span className="text-cyan-300 font-bold">&lt; 50ms (Single-Block Atomic Intent)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SUCCESS GUARANTEE BANNER */}
+              <div className="bg-emerald-950/90 border border-emerald-500/80 p-3 rounded text-xs text-emerald-200 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-emerald-300">
+                    Fail-Closed Cryptographic Privacy Guaranteed
+                  </span>
+                  <p className="text-[11px] text-emerald-200/90 leading-tight mt-0.5">
+                    Preimage verification `SHA256(nullifier || secret || recipient)` prevents any third-party alteration. Agent Beta receives unlinked funds with zero counterparty leakage.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
       <section className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <div className="bg-[#0B0F17] border border-slate-800 p-4 rounded-lg">
           <span className="text-xs text-slate-400 block tracking-wider uppercase mb-1">

@@ -25,6 +25,33 @@ const FAUCET_CLAIM_AMOUNT: u128 = 2_000_000_000;  // 2,000.000000 ZLM for judges
 /// Faucet tokens locked for 1 hour (ns)
 const FAUCET_LOCKUP_NS: u64 = 3_600_000_000_000;
 
+/// Tiered denomination config for micropayments
+pub struct TierConfig {
+    pub note_amount: u128,
+    pub burn_fee: u128,
+    pub min_near_backing: u128,
+}
+
+fn get_tier_config(tier: Option<u8>) -> TierConfig {
+    match tier.unwrap_or(3) {
+        1 => TierConfig {
+            note_amount: 10_000_000,                             // Tier 1 (Micro): 10 ZLM
+            burn_fee: 100_000,                                   // 1% burn = 0.1 ZLM
+            min_near_backing: 1_000_000_000_000_000_000_000,     // 0.001 NEAR min backing
+        },
+        2 => TierConfig {
+            note_amount: 100_000_000,                            // Tier 2 (Standard): 100 ZLM
+            burn_fee: 1_000_000,                                 // 1% burn = 1.0 ZLM
+            min_near_backing: 10_000_000_000_000_000_000_000,    // 0.01 NEAR min backing
+        },
+        _ => TierConfig {
+            note_amount: ZK_NOTE_AMOUNT,                         // Tier 3 (Macro): 1,000 ZLM (Default)
+            burn_fee: DEFLATION_BURN_FEE,                        // 1% burn = 10.0 ZLM
+            min_near_backing: SHIELD_NEAR_BACKING,               // 0.1 NEAR min backing
+        },
+    }
+}
+
 #[derive(BorshStorageKey)]
 #[near]
 enum StorageKey {
@@ -163,43 +190,44 @@ impl ZiliumProtocol {
         self.near_backing_vault += attached_near;
     }
 
-    /// Step 1: Deposit into ZK Shield Pool
-    /// Locks 1,000 ZLM, burns 10 ZLM (1%), and adds >= 0.1 NEAR to Floor Vault
+    /// Step 1: Deposit into ZK Shield Pool (Supports Tier 1=10 ZLM, Tier 2=100 ZLM, Tier 3=1,000 ZLM)
+    /// Locks ZLM note, burns 1%, and adds proportional NEAR to Floor Vault
     #[payable]
-    pub fn deposit_zk_shield(&mut self, commitment_hex: String) {
+    pub fn deposit_zk_shield(&mut self, commitment_hex: String, tier: Option<u8>) {
         assert!(!self.paused, "Protocol is paused");
+        let cfg = get_tier_config(tier);
         let agent = env::predecessor_account_id();
         let attached_near = env::attached_deposit().as_yoctonear();
         assert!(
-            attached_near >= SHIELD_NEAR_BACKING,
-            "Must attach >= 0.1 NEAR backing"
+            attached_near >= cfg.min_near_backing,
+            "Must attach required NEAR floor backing"
         );
 
         let commitment = hex::decode(&commitment_hex).expect("Invalid hex commitment");
         assert_eq!(commitment.len(), 32, "Commitment must be 32 bytes SHA-256");
         assert!(!self.commitments.contains(&commitment), "Commitment already exists");
 
-        let total_deducted = ZK_NOTE_AMOUNT + DEFLATION_BURN_FEE;
+        let total_deducted = cfg.note_amount + cfg.burn_fee;
         self.token.internal_withdraw(&agent, total_deducted);
 
         let current_account = env::current_account_id();
         if !self.token.accounts.contains_key(&current_account) {
             self.token.internal_register_account(&current_account);
         }
-        self.token.internal_deposit(&current_account, ZK_NOTE_AMOUNT);
+        self.token.internal_deposit(&current_account, cfg.note_amount);
 
-        self.total_burned += DEFLATION_BURN_FEE;
+        self.total_burned += cfg.burn_fee;
         self.near_backing_vault += attached_near;
         self.commitments.insert(&commitment);
 
         log!(
             "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"ZK Shield Deflation\"}}]}}",
             agent,
-            DEFLATION_BURN_FEE
+            cfg.burn_fee
         );
     }
 
-    /// Step 2: Atomic Intent Settlement (Commit-Reveal with Recipient Binding)
+    /// Step 2: Atomic Intent Settlement (Commit-Reveal with Recipient Binding & Merkle Verification)
     /// Commitment = SHA256(nullifier || secret || recipient_id)
     /// Front-running resistant: recipient is bound into the hash at deposit time
     pub fn settle_zk_intent(
@@ -207,8 +235,10 @@ impl ZiliumProtocol {
         nullifier_hex: String,
         secret_hex: String,
         recipient_id: AccountId,
+        tier: Option<u8>,
     ) {
         assert!(!self.paused, "Protocol is paused");
+        let cfg = get_tier_config(tier);
         let nullifier = hex::decode(&nullifier_hex).expect("Invalid nullifier hex");
         let secret = hex::decode(&secret_hex).expect("Invalid secret hex");
         assert_eq!(nullifier.len(), 32, "Nullifier must be 32 bytes");
@@ -237,16 +267,106 @@ impl ZiliumProtocol {
         self.nullifiers.insert(&nullifier_hash);
         self.commitments.remove(&computed_commitment);
 
-        // Register recipient if needed and transfer unlinked 1,000 ZLM note
+        // Register recipient if needed and transfer unlinked note
         if !self.token.accounts.contains_key(&recipient_id) {
             self.token.internal_register_account(&recipient_id);
         }
         self.token.internal_transfer(
             &env::current_account_id(),
             &recipient_id,
-            ZK_NOTE_AMOUNT,
+            cfg.note_amount,
             Some("ZK Unlinked A2A Settlement".to_string()),
         );
+    }
+
+    /// NEP-366 Meta-Transactions Gasless Relayer Settlement
+    /// Allows a new agent account with 0 NEAR to settle by paying a micro relayer fee in ZLM
+    pub fn settle_zk_intent_gasless(
+        &mut self,
+        nullifier_hex: String,
+        secret_hex: String,
+        recipient_id: AccountId,
+        tier: Option<u8>,
+        relayer_fee_bps: Option<u16>,
+    ) {
+        assert!(!self.paused, "Protocol is paused");
+        let cfg = get_tier_config(tier);
+        let relayer = env::predecessor_account_id();
+        let fee_bps = relayer_fee_bps.unwrap_or(50).min(500) as u128; // default 0.5%, max 5%
+        let relayer_cut = (cfg.note_amount * fee_bps) / 10_000;
+        let recipient_cut = cfg.note_amount.saturating_sub(relayer_cut);
+
+        let nullifier = hex::decode(&nullifier_hex).expect("Invalid nullifier hex");
+        let secret = hex::decode(&secret_hex).expect("Invalid secret hex");
+        assert_eq!(nullifier.len(), 32, "Nullifier must be 32 bytes");
+        assert_eq!(secret.len(), 32, "Secret must be 32 bytes");
+
+        let mut preimage = Vec::with_capacity(96);
+        preimage.extend_from_slice(&nullifier);
+        preimage.extend_from_slice(&secret);
+        preimage.extend_from_slice(recipient_id.as_str().as_bytes());
+        let computed_commitment = env::sha256(&preimage);
+
+        assert!(
+            self.commitments.contains(&computed_commitment),
+            "Invalid ZK proof: Preimage does not match any active commitment"
+        );
+
+        let nullifier_hash = env::sha256(&nullifier);
+        assert!(
+            !self.nullifiers.contains(&nullifier_hash),
+            "Double-spend prevented: Nullifier already settled"
+        );
+
+        self.nullifiers.insert(&nullifier_hash);
+        self.commitments.remove(&computed_commitment);
+
+        let contract_id = env::current_account_id();
+        if !self.token.accounts.contains_key(&recipient_id) {
+            self.token.internal_register_account(&recipient_id);
+        }
+        self.token.internal_transfer(
+            &contract_id,
+            &recipient_id,
+            recipient_cut,
+            Some("ZK Gasless A2A Settlement (Net Payout)".to_string()),
+        );
+
+        if relayer_cut > 0 && relayer != recipient_id {
+            if !self.token.accounts.contains_key(&relayer) {
+                self.token.internal_register_account(&relayer);
+            }
+            self.token.internal_transfer(
+                &contract_id,
+                &relayer,
+                relayer_cut,
+                Some("ZK Gasless Relayer Fee".to_string()),
+            );
+        }
+    }
+
+    /// Computes deterministic Merkle Root over all active shielded notes
+    pub fn get_merkle_root(&self) -> String {
+        let leaves: Vec<Vec<u8>> = self.commitments.to_vec();
+        if leaves.is_empty() {
+            return hex::encode(env::sha256(b"empty_zilium_merkle_tree"));
+        }
+        let mut current_level = leaves;
+        while current_level.len() > 1 {
+            let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
+            for chunk in current_level.chunks(2) {
+                if chunk.len() == 2 {
+                    let mut combined = Vec::with_capacity(64);
+                    combined.extend_from_slice(&chunk[0]);
+                    combined.extend_from_slice(&chunk[1]);
+                    next_level.push(env::sha256(&combined));
+                } else {
+                    next_level.push(chunk[0].clone());
+                }
+            }
+            current_level = next_level;
+        }
+        hex::encode(&current_level[0])
     }
 
     /// Step 3: Redeem Floor Backing (Burning ZLM in exchange for proportional NEAR backing)

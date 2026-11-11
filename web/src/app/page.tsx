@@ -517,7 +517,7 @@ export default function ZiliumDashboard() {
         </div>
 
         <div className="bg-[#0A0D14] border border-rose-950/40 p-4 rounded-xl">
-          <span className="text-[10px] text-rose-400 tracking-wider uppercase block mb-1 flex items-center gap-1.5">
+          <span className="text-[10px] text-rose-400 tracking-wider uppercase mb-1 flex items-center gap-1.5">
             <Flame className="w-3 h-3 text-rose-400" /> Permanently Burned
           </span>
           <div className="text-xl font-bold text-rose-400 tracking-tight">
@@ -527,7 +527,7 @@ export default function ZiliumDashboard() {
         </div>
 
         <div className="bg-[#0A0D14] border border-emerald-950/40 p-4 rounded-xl">
-          <span className="text-[10px] text-emerald-400 tracking-wider uppercase block mb-1 flex items-center gap-1.5">
+          <span className="text-[10px] text-emerald-400 tracking-wider uppercase mb-1 flex items-center gap-1.5">
             <TrendingUp className="w-3 h-3 text-emerald-400" /> Floor Backing Vault
           </span>
           <div className="text-xl font-bold text-emerald-400 tracking-tight">
@@ -539,7 +539,7 @@ export default function ZiliumDashboard() {
         </div>
 
         <div className="bg-[#0A0D14] border border-cyan-950/40 p-4 rounded-xl">
-          <span className="text-[10px] text-cyan-400 tracking-wider uppercase block mb-1 flex items-center gap-1.5">
+          <span className="text-[10px] text-cyan-400 tracking-wider uppercase mb-1 flex items-center gap-1.5">
             <Lock className="w-3 h-3 text-cyan-400" /> Active ZK Notes
           </span>
           <div className="text-xl font-bold text-cyan-400 tracking-tight">
@@ -866,7 +866,7 @@ export default function ZiliumDashboard() {
 
                 {/* MEMPOOL SNIFFER INSPECTOR */}
                 <div className="bg-[#0A0406] p-3.5 rounded-lg border border-rose-900/50 text-xs space-y-2 mb-4 font-mono">
-                  <span className="text-[10px] text-rose-300 font-bold uppercase block mb-1 flex items-center gap-1.5">
+                  <span className="text-[10px] text-rose-300 font-bold uppercase mb-1 flex items-center gap-1.5">
                     <Eye className="w-3.5 h-3.5 text-rose-400" /> Intercepted Strategy Payload (Sniffer Output)
                   </span>
                   <div className="flex justify-between border-b border-rose-950/60 pb-1">
@@ -949,7 +949,7 @@ export default function ZiliumDashboard() {
 
                 {/* ON-CHAIN INSPECTOR */}
                 <div className="bg-[#030C0A] p-3.5 rounded-lg border border-emerald-900/50 text-xs space-y-2 mb-4 font-mono">
-                  <span className="text-[10px] text-emerald-300 font-bold uppercase block mb-1 flex items-center gap-1.5">
+                  <span className="text-[10px] text-emerald-300 font-bold uppercase mb-1 flex items-center gap-1.5">
                     <EyeOff className="w-3.5 h-3.5 text-cyan-400" /> What the Public Blockchain Sees on Agent Beta
                   </span>
                   <div className="flex justify-between border-b border-emerald-950/60 pb-1">

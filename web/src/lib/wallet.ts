@@ -15,7 +15,13 @@ export async function getWalletSelector(): Promise<{ selector: WalletSelector; m
       const { setupMeteorWallet } = await import("@near-wallet-selector/meteor-wallet");
 
       const selector = await setupWalletSelector({
-        network: "testnet",
+        network: {
+          networkId: "testnet",
+          nodeUrl: "https://test.rpc.fastnear.com",
+          helperUrl: "https://helper.testnet.near.org",
+          explorerUrl: "https://testnet.nearblocks.io",
+          indexerUrl: "https://test.api.fastnear.com/v0",
+        },
         modules: [
           setupMyNearWallet(),
           setupMeteorWallet(),

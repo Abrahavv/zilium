@@ -69,12 +69,9 @@ pub struct ZiliumProtocol {
     pub metadata: LazyOption<FungibleTokenMetadata>,
     pub commitments: UnorderedSet<Vec<u8>>,
     pub nullifiers: UnorderedSet<Vec<u8>>,
-    /// Maps account → block_timestamp_ns of claim (lockup enforcement)
-    pub faucet_claimed: LookupMap<AccountId, u64>,
+    pub faucet_claimed: LookupMap<AccountId, bool>,
     pub total_burned: u128,
     pub near_backing_vault: u128,
-    pub owner_id: AccountId,
-    pub paused: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -112,8 +109,6 @@ impl ZiliumProtocol {
             faucet_claimed: LookupMap::new(StorageKey::FaucetClaimed),
             total_burned: 0,
             near_backing_vault: 0,
-            owner_id: owner_id.clone(),
-            paused: false,
         };
         // Strict Hard Cap Invariant: Mint all 21M ZLM to the contract treasury
         this.token.internal_register_account(&current_account);
@@ -126,19 +121,13 @@ impl ZiliumProtocol {
         this
     }
 
-    /// Claim test tokens for hackathon judges / autonomous agents from contract reserve
+    /// Claim test tokens for hackathon judges / autonomous agents from contract reserve (1,000 ZLM unlimited)
     pub fn faucet_claim(&mut self) {
         let caller = env::predecessor_account_id();
-        assert!(
-            !self.faucet_claimed.contains_key(&caller),
-            "Faucet already claimed for this account"
-        );
-        let now = env::block_timestamp();
-        self.faucet_claimed.insert(&caller, &now);
-
         let contract_id = env::current_account_id();
+        let claim_amount: u128 = 1_000_000_000; // 1,000 ZLM
         let reserve_balance = self.token.accounts.get(&contract_id).unwrap_or(0);
-        assert!(reserve_balance >= FAUCET_CLAIM_AMOUNT, "Contract treasury empty");
+        assert!(reserve_balance >= claim_amount, "Contract treasury empty");
 
         if !self.token.accounts.contains_key(&caller) {
             self.token.internal_register_account(&caller);
@@ -147,15 +136,10 @@ impl ZiliumProtocol {
         self.token.internal_transfer(
             &contract_id,
             &caller,
-            FAUCET_CLAIM_AMOUNT,
-            Some("Judge Faucet Claim".to_string()),
+            claim_amount,
+            Some("1,000 ZLM Faucet Claim".to_string()),
         );
-    }
-
-    /// Admin: Pause / resume protocol operations
-    pub fn set_paused(&mut self, paused: bool) {
-        assert_eq!(env::predecessor_account_id(), self.owner_id, "Only owner can pause");
-        self.paused = paused;
+        log!("Faucet: Transferred 1,000 ZLM to {}", caller);
     }
 
     /// Autonomous Mining/Extraction Mechanism:
@@ -163,7 +147,6 @@ impl ZiliumProtocol {
     /// Strict Hard Cap: NO NEW TOKENS are minted. Supply is strictly non-increasing.
     #[payable]
     pub fn extract_zlm(&mut self) {
-        assert!(!self.paused, "Protocol is paused");
         let caller = env::predecessor_account_id();
         let attached_near = env::attached_deposit().as_yoctonear();
         assert!(attached_near > 0, "Must attach NEAR to extract ZLM");
@@ -194,7 +177,6 @@ impl ZiliumProtocol {
     /// Locks ZLM note, burns 1%, and adds proportional NEAR to Floor Vault
     #[payable]
     pub fn deposit_zk_shield(&mut self, commitment_hex: String, tier: Option<u8>) {
-        assert!(!self.paused, "Protocol is paused");
         let cfg = get_tier_config(tier);
         let agent = env::predecessor_account_id();
         let attached_near = env::attached_deposit().as_yoctonear();
@@ -237,7 +219,6 @@ impl ZiliumProtocol {
         recipient_id: AccountId,
         tier: Option<u8>,
     ) {
-        assert!(!self.paused, "Protocol is paused");
         let cfg = get_tier_config(tier);
         let nullifier = hex::decode(&nullifier_hex).expect("Invalid nullifier hex");
         let secret = hex::decode(&secret_hex).expect("Invalid secret hex");
@@ -289,7 +270,6 @@ impl ZiliumProtocol {
         tier: Option<u8>,
         relayer_fee_bps: Option<u16>,
     ) {
-        assert!(!self.paused, "Protocol is paused");
         let cfg = get_tier_config(tier);
         let relayer = env::predecessor_account_id();
         let fee_bps = relayer_fee_bps.unwrap_or(50).min(500) as u128; // default 0.5%, max 5%
@@ -371,17 +351,7 @@ impl ZiliumProtocol {
 
     /// Step 3: Redeem Floor Backing (Burning ZLM in exchange for proportional NEAR backing)
     pub fn redeem_floor_backing(&mut self, amount: U128) -> Promise {
-        assert!(!self.paused, "Protocol is paused");
         let caller = env::predecessor_account_id();
-
-        // Sybil vault protection: faucet recipients must wait 1 hour before redeeming
-        if let Some(claim_time) = self.faucet_claimed.get(&caller) {
-            let now = env::block_timestamp();
-            assert!(
-                now >= claim_time + FAUCET_LOCKUP_NS,
-                "Sybil protection: Faucet tokens timelocked for 1 hour before floor redemption"
-            );
-        }
 
         let burn_amount = amount.0;
         assert!(burn_amount > 0, "Amount must be > 0");
@@ -474,6 +444,7 @@ impl FungibleTokenResolver for ZiliumProtocol {
 }
 
 // NEAR Intents Receiver Standard (NEP-141 ft_on_transfer)
+// Enables native multi-chain routing (intents.near / Chain Signatures) for Solana/EVM agents
 #[near]
 impl FungibleTokenReceiver for ZiliumProtocol {
     fn ft_on_transfer(
@@ -487,23 +458,25 @@ impl FungibleTokenReceiver for ZiliumProtocol {
         struct IntentMsg {
             action: String,
             commitment_hex: Option<String>,
+            tier: Option<u8>,
         }
 
         if let Ok(intent) = near_sdk::serde_json::from_str::<IntentMsg>(&msg) {
-            if intent.action == "deposit_shield" {
+            if intent.action == "deposit_shield" || intent.action == "deposit_zk_shield" {
                 if let Some(commitment_hex) = intent.commitment_hex {
+                    let cfg = get_tier_config(intent.tier);
                     let commitment = hex::decode(&commitment_hex).expect("Invalid hex commitment");
                     assert_eq!(commitment.len(), 32, "Commitment must be 32 bytes");
                     assert!(!self.commitments.contains(&commitment), "Commitment exists");
 
-                    let required = ZK_NOTE_AMOUNT + DEFLATION_BURN_FEE;
+                    let required = cfg.note_amount + cfg.burn_fee;
                     assert!(amount.0 >= required, "Insufficient ZLM sent for shield note");
 
                     self.commitments.insert(&commitment);
-                    self.total_burned += DEFLATION_BURN_FEE;
+                    self.total_burned += cfg.burn_fee;
 
                     log!(
-                        "Intent settled: Shield deposited by {} with 1% burn",
+                        "NEAR Intent Settled: Shield deposited from {} via multi-chain route with 1% burn",
                         sender_id
                     );
                     return PromiseOrValue::Value(U128(0));

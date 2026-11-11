@@ -88,6 +88,7 @@ export default function ZiliumDashboard() {
   const [activeNote, setActiveNote] = useState<ZkNoteTicket | null>(null);
 
   const [recipientAgent, setRecipientAgent] = useState("zilium-agent-b.testnet");
+  const [selectedTier, setSelectedTier] = useState<1 | 2 | 3>(2);
   const [redeemAmountZlm, setRedeemAmountZlm] = useState("1000");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -220,15 +221,16 @@ export default function ZiliumDashboard() {
     return txObj?.transaction?.hash || txObj?.transaction_outcome?.id || "verified";
   };
 
+  const TIER_DETAILS = useMemo(() => ({
+    1: { name: "Micro", note: "10", burn: "0.1", near: "0.001", totalZlm: "10.1", yoctoNear: "1000000000000000000000", rawZlm: BigInt("10100000") },
+    2: { name: "Standard", note: "100", burn: "1.0", near: "0.01", totalZlm: "101.0", yoctoNear: "10000000000000000000000", rawZlm: BigInt("101000000") },
+    3: { name: "Macro", note: "1,000", burn: "10.0", near: "0.1", totalZlm: "1,010.0", yoctoNear: "100000000000000000000000", rawZlm: BigInt("1010000000") },
+  }), []);
+
   const handleFaucet = async () => {
     if (mode === "LIVE_TESTNET" && !walletAccountId) {
       handleConnectWallet();
       notify("Please connect your NEAR Testnet wallet first", "info");
-      return;
-    }
-    const currentBal = BigInt(userBalance || "0");
-    if (currentBal >= BigInt("2000000000")) {
-      notify("You already have 2,000 ZLM in your wallet. You can proceed directly to Step 02 (Shield).", "info");
       return;
     }
     setLoading(true);
@@ -236,7 +238,7 @@ export default function ZiliumDashboard() {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
         const hash = await callContractMethod("faucet_claim", {});
         setTxHash(hash);
-        notify("Claimed 2,000 ZLM via Connected Wallet", "success");
+        notify("Claimed 1,000 ZLM from Genesis Treasury!", "success");
         await syncState();
         setTimeout(syncState, 2000);
       } else {
@@ -258,9 +260,10 @@ export default function ZiliumDashboard() {
       return;
     }
     const currentBal = BigInt(userBalance || "0");
-    if (currentBal < BigInt("1010000000")) {
+    const cfg = TIER_DETAILS[selectedTier];
+    if (currentBal < cfg.rawZlm) {
       const avail = (Number(currentBal) / 1_000_000).toFixed(2);
-      notify(`Insufficient balance. Step 02 requires 1,010 ZLM (you have ${avail} ZLM). Claim from Faucet first.`, "error");
+      notify(`Insufficient balance. Tier ${cfg.name} requires ${cfg.totalZlm} ZLM (you have ${avail} ZLM). Claim from Faucet or select a lower tier.`, "error");
       return;
     }
     setLoading(true);
@@ -271,11 +274,11 @@ export default function ZiliumDashboard() {
       if (mode === "LIVE_TESTNET" && walletAccountId) {
         const hash = await callContractMethod(
           "deposit_zk_shield",
-          { commitment_hex: ticket.commitmentHex },
-          "100000000000000000000000"
+          { commitment_hex: ticket.commitmentHex, tier: selectedTier },
+          cfg.yoctoNear
         );
         setTxHash(hash);
-        notify("ZK Note Deposited on NEAR Testnet (1% Burn + Floor Raised)", "success");
+        notify(`Tier ${cfg.name} ZK Note Deposited (${cfg.burn} ZLM Burn + Floor Raised)!`, "success");
         await syncState();
         setTimeout(syncState, 2000);
       } else {
@@ -285,7 +288,7 @@ export default function ZiliumDashboard() {
           return;
         }
         syncState();
-        notify("Note Shielded: 1,000 ZLM locked, 10 ZLM burned, +0.1 NEAR backed", "success");
+        notify(`Note Shielded: ${cfg.note} ZLM locked, ${cfg.burn} ZLM burned, +${cfg.near} NEAR backed`, "success");
       }
     } catch (err: unknown) {
       notify(parseNearError(err), "error");
@@ -308,6 +311,7 @@ export default function ZiliumDashboard() {
           nullifier_hex: activeNote.nullifierHex,
           secret_hex: activeNote.secretHex,
           recipient_id: recipientAgent,
+          tier: selectedTier,
         });
         setTxHash(hash);
         notify("Unlinked Settlement Confirmed on Testnet", "success");
@@ -324,7 +328,7 @@ export default function ZiliumDashboard() {
           return;
         }
         syncState();
-        notify(`Settled 1,000 ZLM unlinked to ${recipientAgent}`, "success");
+        notify(`Settled ${TIER_DETAILS[selectedTier].note} ZLM unlinked to ${recipientAgent}`, "success");
       }
     } catch (err: unknown) {
       notify(parseNearError(err), "error");
@@ -614,38 +618,65 @@ export default function ZiliumDashboard() {
                 className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-bold text-xs rounded-lg transition flex items-center justify-center gap-2"
               >
                 <Coins className="w-4 h-4" />
-                {loading
-                  ? "Processing..."
-                  : BigInt(userBalance || "0") >= BigInt("2000000000")
-                  ? "Claimed (2,000 ZLM Ready)"
-                  : "Claim 2,000 ZLM"}
+                {loading ? "Claiming..." : "Claim 1,000 ZLM (Unlimited)"}
               </button>
             </div>
 
             {/* STEP 01: SHIELD & BURN */}
             <div className="bg-[#0A0D14] border border-white/[0.08] p-5 rounded-xl flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Step 02 // Shield</span>
                   <span className="text-[10px] bg-white/[0.04] px-2 py-0.5 rounded text-slate-400">deposit_zk_shield()</span>
                 </div>
-                <h3 className="text-sm font-bold text-white mb-1">Lock 1,000 & Burn 1%</h3>
-                <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                  Deducts 1,010 ZLM: 1,000 ZLM into note, 10 ZLM destroyed forever, 0.1 NEAR to vault.
-                </p>
-                <div className="bg-[#06080D] p-3 rounded-lg border border-white/[0.06] text-xs space-y-1.5 mb-4">
+                <h3 className="text-sm font-bold text-white mb-1">Select Note Tier & Burn</h3>
+                
+                {/* TIER PICKER BUTTONS */}
+                <div className="grid grid-cols-3 gap-1 bg-[#06080D] p-1 rounded-lg border border-white/[0.08] mb-3 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTier(1)}
+                    className={`py-1 rounded font-bold transition ${selectedTier === 1 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
+                  >
+                    10 ZLM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTier(2)}
+                    className={`py-1 rounded font-bold transition ${selectedTier === 2 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
+                  >
+                    100 ZLM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTier(3)}
+                    className={`py-1 rounded font-bold transition ${selectedTier === 3 ? "bg-emerald-500 text-black shadow" : "text-slate-400 hover:text-white"}`}
+                  >
+                    1,000 ZLM
+                  </button>
+                </div>
+
+                <div className="bg-[#06080D] p-3 rounded-lg border border-white/[0.06] text-xs space-y-1.5 mb-3">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Shield Note:</span>
-                    <span className="text-white font-bold">1,000.00 ZLM</span>
+                    <span className="text-white font-bold">{TIER_DETAILS[selectedTier].note}.00 ZLM</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-rose-400">Burn (1%):</span>
-                    <span className="text-rose-400 font-bold">-10.00 ZLM</span>
+                    <span className="text-rose-400 font-bold">-{TIER_DETAILS[selectedTier].burn} ZLM</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-cyan-400">NEAR Backing:</span>
-                    <span className="text-cyan-400 font-bold">+0.10 NEAR</span>
+                    <span className="text-cyan-400 font-bold">+{TIER_DETAILS[selectedTier].near} NEAR</span>
                   </div>
+                  <div className="flex justify-between border-t border-white/[0.06] pt-1">
+                    <span className="text-slate-500 text-[10px]">Required:</span>
+                    <span className="text-emerald-300 font-bold text-[10px]">{TIER_DETAILS[selectedTier].totalZlm} ZLM</span>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-cyan-400/80 bg-cyan-950/20 border border-cyan-800/40 px-2 py-1 rounded text-center mb-4">
+                  Multi-Chain Atomic Intent: Compatible with intents.near
                 </div>
               </div>
               <button
@@ -654,7 +685,7 @@ export default function ZiliumDashboard() {
                 className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-bold text-xs rounded-lg transition flex items-center justify-center gap-2"
               >
                 <Lock className="w-4 h-4" />
-                {loading ? "Signing..." : "Deposit & Burn 1%"}
+                {loading ? "Signing..." : `Deposit ${TIER_DETAILS[selectedTier].note} ZLM`}
               </button>
             </div>
 

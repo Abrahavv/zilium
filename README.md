@@ -27,21 +27,22 @@ Autonomous AI agents executing high-frequency economic actions on public blockch
 
 ## 2. Formal Cryptographic & Economic Invariants
 
-### Law 1: Strict Deflationary Burn
-Every time an autonomous agent shields ZLM into a private note, exactly 1% is permanently destroyed from circulating total supply:
+### Law 1: Strict Deflationary Shielding Quota (1% Burn)
+Every time an autonomous agent shields $ZLM into a private note to rebalance liquidity or execute an OTC settlement, exactly 1% of the transfer amount is permanently destroyed from the circulating total supply:
 $$\text{Supply}_{t} = \text{Supply}_{t-1} - \text{Burn Fee}$$
 
-### Law 2: Monotonically Non-Decreasing Floor Price
-Each shielded note requires attaching native NEAR, which is irrevocably transferred to the contract reserve vault:
+### Law 2: Monotonically Non-Decreasing Floor Price (Protocol-Backed Reserve)
+Each shielded note requires locking native $NEAR into the contract's immutable reserve vault (`near_backing_vault`). The floor price is defined as:
 $$\text{Floor Price}(t) = \frac{\text{NEAR Vault Reserve}(t)}{\text{Circulating Supply}(t)}$$
-Because the numerator ($\text{Reserve}$) increases upon every shield deposit, and the denominator ($\text{Supply}$) strictly decreases upon each burn, the intrinsic floor price cannot decrease mathematically:
+Because the attached native NEAR remains irrevocably locked in the vault while the 1% burn permanently decreases the denominator ($\text{Supply}$), the intrinsic floor price ratchets upward monotonically:
 $$\text{Floor Price}(t) \ge \text{Floor Price}(t-1)$$
+*This creates an upward-ratcheting settlement asset where high-frequency dark pool volume structurally hardens the token's backing.*
 
-### Law 3: Atomic Unlinked Privacy (Air-Gapped DAG)
-- **Commitment Generation:** $C = \text{SHA256}(\text{nullifier} \parallel \text{secret})$ (Bearer Dark Note) or with optional recipient binding.
-- **Settlement Verification:** Contract verifies $C \in \text{Active Commitments}$ and $\text{SHA256}(\text{nullifier}) \notin \text{Spent Nullifiers}$.
-- **Front-Running Immunity & Double-Spend Protection:** Checks-Effects-Interactions guarantees nullifier is marked spent and commitment purged strictly before token delivery.
-- **Graph Break:** The contract distributes tokens directly from the vault to the recipient agent account, with zero cryptographic linkage to the original sender.
+### Law 3: Atomic Unlinked Settlement & MEV Immunity
+* **Commitment & Recipient Binding:** Commitments are generated deterministically as $C = \text{SHA256}(\text{nullifier} \parallel \text{secret} \parallel \text{recipient})$ utilizing NEAR's native host cryptographic functions (`env::sha256`) and `alt_bn128`-compatible primitives. Supports both Bearer Dark Notes and Recipient-Bound Dark Notes.
+* **NEP-366 Relayer Front-Running Immunity:** By cryptographically binding the target recipient inside the meta-transaction payload (`settle_zk_intent_gasless`), predatory MEV searchers in the public mempool cannot intercept, front-run, or redirect funds even if they observe the settlement transaction.
+* **Async Reentrancy & Double-Spend Protection:** Designed specifically for NEAR's asynchronous cross-contract promise execution using the Checks-Effects-Interactions (CEI) pattern. The contract validates commitments and registers `Spent Nullifiers` in state strictly *before* issuing any token delivery or callback promises.
+* **Counterparty Graph Break:** The contract routes funds directly from the protocol vault to the recipient agent account. Public chain explorers and RPC indexers observe zero cryptographic or balance linkage between the sender (Agent Alpha) and receiver (Agent Beta).
 
 ---
 

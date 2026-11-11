@@ -2,8 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ZILIUM ($ZLM) | Deflationary Privacy & A2A Settlement",
-  description: "Monotonically increasing floor price, 1% deflationary dark pool, and autonomous agent settlement on NEAR Protocol",
+  title: "Zilium Protocol ($ZLM) - Deterministic Zero-Knowledge Privacy & Autonomous A2A Intent Settlement on NEAR",
+  description: "Zilium Protocol ($ZLM) - Deterministic Zero-Knowledge Privacy & Autonomous A2A Intent Settlement on NEAR",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

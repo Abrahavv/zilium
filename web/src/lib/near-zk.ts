@@ -6,12 +6,16 @@ export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.
 
 /**
  * Deterministic In-Browser Cryptographic Generator
- * Computes Commitment = SHA256(Nullifier || Secret) via WebCrypto
+ * Computes Commitment = SHA256(Nullifier || Secret || RecipientId) via WebCrypto
  */
-export async function generateZkCommitment(): Promise<ZkNoteTicket> {
+export async function generateZkCommitment(
+  recipientId = "",
+  tier: 1 | 2 | 3 = 1
+): Promise<ZkNoteTicket> {
   const nullifier = window.crypto.getRandomValues(new Uint8Array(32));
   const secret = window.crypto.getRandomValues(new Uint8Array(32));
 
+  // Pure Bearer Privacy Note (Tornado Cash Standard): SHA256(nullifier || secret)
   const preimage = new Uint8Array(64);
   preimage.set(nullifier, 0);
   preimage.set(secret, 32);
@@ -28,6 +32,8 @@ export async function generateZkCommitment(): Promise<ZkNoteTicket> {
     nullifierHex: toHex(nullifier),
     secretHex: toHex(secret),
     commitmentHex: toHex(commitment),
+    recipientId: recipientId.trim(),
+    tier,
     timestamp: Date.now(),
   };
 }

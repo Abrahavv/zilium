@@ -10,6 +10,8 @@ export interface ZkNoteTicket {
   nullifierHex: string;
   secretHex: string;
   commitmentHex: string;
+  recipientId: string;
+  tier: 1 | 2 | 3;
   timestamp: number;
 }
 

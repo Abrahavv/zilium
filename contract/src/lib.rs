@@ -20,10 +20,6 @@ const MAX_SUPPLY: u128 = 21_000_000_000_000;      // 21,000,000.000000 ZLM (6 de
 const ZK_NOTE_AMOUNT: u128 = 1_000_000_000;       // 1,000.000000 ZLM note
 const DEFLATION_BURN_FEE: u128 = 10_000_000;      // 10.000000 ZLM (exact 1% burned)
 const SHIELD_NEAR_BACKING: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR min backing
-const FAUCET_CLAIM_AMOUNT: u128 = 2_000_000_000;  // 2,000.000000 ZLM for judges/testing
-
-/// Faucet tokens locked for 1 hour (ns)
-const FAUCET_LOCKUP_NS: u64 = 3_600_000_000_000;
 
 /// Tiered denomination config for micropayments
 pub struct TierConfig {
@@ -198,6 +194,12 @@ impl ZiliumProtocol {
         }
         self.token.internal_deposit(&current_account, cfg.note_amount);
 
+        // 1% Deflationary Burn: Decrement total_supply permanently
+        self.token.total_supply = self
+            .token
+            .total_supply
+            .checked_sub(cfg.burn_fee)
+            .expect("Total supply underflow on burn");
         self.total_burned += cfg.burn_fee;
         self.near_backing_vault += attached_near;
         self.commitments.insert(&commitment);
@@ -225,17 +227,27 @@ impl ZiliumProtocol {
         assert_eq!(nullifier.len(), 32, "Nullifier must be 32 bytes");
         assert_eq!(secret.len(), 32, "Secret must be 32 bytes");
 
-        // Front-running protection: recipient_id bound into commitment
-        let mut preimage = Vec::with_capacity(96);
-        preimage.extend_from_slice(&nullifier);
-        preimage.extend_from_slice(&secret);
-        preimage.extend_from_slice(recipient_id.as_str().as_bytes());
-        let computed_commitment = env::sha256(&preimage);
+        // Dual-mode commitment support:
+        // Mode A (Bearer Dark Note): SHA256(nullifier || secret) -> ANY recipient can claim
+        // Mode B (Recipient-Bound Note): SHA256(nullifier || secret || recipient_id)
+        let mut preimage_bearer = Vec::with_capacity(64);
+        preimage_bearer.extend_from_slice(&nullifier);
+        preimage_bearer.extend_from_slice(&secret);
+        let commitment_bearer = env::sha256(&preimage_bearer);
 
-        assert!(
-            self.commitments.contains(&computed_commitment),
-            "Invalid ZK proof: Preimage does not match any active commitment"
-        );
+        let mut preimage_bound = Vec::with_capacity(96);
+        preimage_bound.extend_from_slice(&nullifier);
+        preimage_bound.extend_from_slice(&secret);
+        preimage_bound.extend_from_slice(recipient_id.as_str().as_bytes());
+        let commitment_bound = env::sha256(&preimage_bound);
+
+        let matched_commitment = if self.commitments.contains(&commitment_bearer) {
+            commitment_bearer
+        } else if self.commitments.contains(&commitment_bound) {
+            commitment_bound
+        } else {
+            env::panic_str("Invalid ZK proof: Preimage does not match any active commitment");
+        };
 
         // Deterministic nullifier spending check: SHA256(nullifier)
         let nullifier_hash = env::sha256(&nullifier);
@@ -246,7 +258,7 @@ impl ZiliumProtocol {
 
         // Mark nullifier as spent + remove commitment
         self.nullifiers.insert(&nullifier_hash);
-        self.commitments.remove(&computed_commitment);
+        self.commitments.remove(&matched_commitment);
 
         // Register recipient if needed and transfer unlinked note
         if !self.token.accounts.contains_key(&recipient_id) {
@@ -281,16 +293,24 @@ impl ZiliumProtocol {
         assert_eq!(nullifier.len(), 32, "Nullifier must be 32 bytes");
         assert_eq!(secret.len(), 32, "Secret must be 32 bytes");
 
-        let mut preimage = Vec::with_capacity(96);
-        preimage.extend_from_slice(&nullifier);
-        preimage.extend_from_slice(&secret);
-        preimage.extend_from_slice(recipient_id.as_str().as_bytes());
-        let computed_commitment = env::sha256(&preimage);
+        let mut preimage_bearer = Vec::with_capacity(64);
+        preimage_bearer.extend_from_slice(&nullifier);
+        preimage_bearer.extend_from_slice(&secret);
+        let commitment_bearer = env::sha256(&preimage_bearer);
 
-        assert!(
-            self.commitments.contains(&computed_commitment),
-            "Invalid ZK proof: Preimage does not match any active commitment"
-        );
+        let mut preimage_bound = Vec::with_capacity(96);
+        preimage_bound.extend_from_slice(&nullifier);
+        preimage_bound.extend_from_slice(&secret);
+        preimage_bound.extend_from_slice(recipient_id.as_str().as_bytes());
+        let commitment_bound = env::sha256(&preimage_bound);
+
+        let matched_commitment = if self.commitments.contains(&commitment_bearer) {
+            commitment_bearer
+        } else if self.commitments.contains(&commitment_bound) {
+            commitment_bound
+        } else {
+            env::panic_str("Invalid ZK proof: Preimage does not match any active commitment");
+        };
 
         let nullifier_hash = env::sha256(&nullifier);
         assert!(
@@ -299,7 +319,7 @@ impl ZiliumProtocol {
         );
 
         self.nullifiers.insert(&nullifier_hash);
-        self.commitments.remove(&computed_commitment);
+        self.commitments.remove(&matched_commitment);
 
         let contract_id = env::current_account_id();
         if !self.token.accounts.contains_key(&recipient_id) {
@@ -366,6 +386,11 @@ impl ZiliumProtocol {
         assert!(near_to_return > 0, "Redeem yields zero yoctoNEAR");
 
         self.token.internal_withdraw(&caller, burn_amount);
+        self.token.total_supply = self
+            .token
+            .total_supply
+            .checked_sub(burn_amount)
+            .expect("Total supply underflow on floor redeem");
         self.total_burned += burn_amount;
         self.near_backing_vault = self.near_backing_vault.saturating_sub(near_to_return);
 
@@ -391,9 +416,15 @@ impl ZiliumProtocol {
         } else {
             0
         };
+        // Strict invariant: cumulative burn = MAX_SUPPLY - current_supply
+        let burned = if MAX_SUPPLY >= supply {
+            MAX_SUPPLY - supply
+        } else {
+            self.total_burned
+        };
         ProtocolState {
             current_supply: U128(supply),
-            total_burned: U128(self.total_burned),
+            total_burned: U128(burned),
             near_vault_backing: U128(self.near_backing_vault),
             floor_price_yocto_per_zlm: U128(floor),
             active_zk_notes: active,
@@ -473,6 +504,11 @@ impl FungibleTokenReceiver for ZiliumProtocol {
                     assert!(amount.0 >= required, "Insufficient ZLM sent for shield note");
 
                     self.commitments.insert(&commitment);
+                    self.token.total_supply = self
+                        .token
+                        .total_supply
+                        .checked_sub(cfg.burn_fee)
+                        .expect("Total supply underflow on intent burn");
                     self.total_burned += cfg.burn_fee;
 
                     log!(

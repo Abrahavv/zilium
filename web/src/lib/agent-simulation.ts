@@ -32,7 +32,7 @@ const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.drpc.org";
 
 // Agent Alpha Credentials (Buyer / Sender)
-const AGENT_ALPHA_ID = "zilium-clean-1794256999.testnet";
+const AGENT_ALPHA_ID = "agent-a.zilium-clean-1794256999.testnet";
 const AGENT_ALPHA_KEY = process.env.TESTNET_MASTER_KEY;
 
 // Agent Beta Credentials (Seller / Receiver)
@@ -84,6 +84,23 @@ async function runAutonomousAgentCycle() {
 
   // Phase 3: Agent Alpha enters dark pool
   console.log(">>> [PHASE 3] Agent Alpha locking 1,000 ZLM, burning 10 ZLM (1%), and attaching 0.1 NEAR...");
+  try {
+    const bal = await agentAlpha.viewFunction({
+      contractId: CONTRACT_ID,
+      methodName: "ft_balance_of",
+      args: { account_id: AGENT_ALPHA_ID },
+    });
+    if (BigInt(bal) < BigInt("1010000000")) {
+      await agentAlpha.functionCall({
+        contractId: CONTRACT_ID,
+        methodName: "faucet_claim",
+        args: {},
+        gas: BigInt("100000000000000"),
+        attachedDeposit: BigInt(0),
+      });
+    }
+  } catch (_e) {}
+
   const shieldTx = await agentAlpha.functionCall({
     contractId: CONTRACT_ID,
     methodName: "deposit_zk_shield",
@@ -123,9 +140,9 @@ async function runAutonomousAgentCycle() {
     args: {},
   });
   console.log(`    New Circulating Supply : ${Number(finalState.current_supply) / 1e6} ZLM (-10 ZLM Burned)`);
-  console.log(`    Total Burned Tokens    : ${Number(finalState.total_burned) / 1e6} ZLM 🔥`);
-  console.log(`    New Floor Vault Reserve: ${(Number(finalState.near_vault_backing) / 1e24).toFixed(4)} NEAR 💎 (+0.1 NEAR Backed)`);
-  console.log(`    New Floor Price        : ${(Number(finalState.floor_price_yocto_per_zlm) / 1e18).toFixed(8)} NEAR 📈 (Monotonically Higher)`);
+  console.log(`    Total Burned Tokens    : ${Number(finalState.total_burned) / 1e6} ZLM`);
+  console.log(`    New Floor Vault Reserve: ${(Number(finalState.near_vault_backing) / 1e24).toFixed(4)} NEAR (+0.1 NEAR Backed)`);
+  console.log(`    New Floor Price        : ${(Number(finalState.floor_price_yocto_per_zlm) / 1e18).toFixed(8)} NEAR (Monotonically Higher)`);
   console.log("=========================================================================");
   console.log("              100% OPERATIONAL, FAIL-CLOSED & DETERMINISTIC              ");
   console.log("=========================================================================\n");

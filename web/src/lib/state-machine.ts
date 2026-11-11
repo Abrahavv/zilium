@@ -94,17 +94,19 @@ export class DeterministicZiliumEngine {
     secretHex: string,
     recipientId: string
   ): Promise<{ success: boolean; message: string }> {
-    // 1. Recompute SHA256(nullifier || secret)
+    // 1. Recompute SHA256(nullifier || secret || recipientId)
     const nullifierBytes = new Uint8Array(
       nullifierHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
     );
     const secretBytes = new Uint8Array(
       secretHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
     );
+    const recipientBytes = new TextEncoder().encode(recipientId);
 
-    const preimage = new Uint8Array(64);
+    const preimage = new Uint8Array(64 + recipientBytes.length);
     preimage.set(nullifierBytes, 0);
     preimage.set(secretBytes, 32);
+    preimage.set(recipientBytes, 64);
 
     const hashBuffer = await window.crypto.subtle.digest("SHA-256", preimage);
     const computedCommitment = Array.from(new Uint8Array(hashBuffer))

@@ -14,3 +14,50 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+@keyframes dashFlow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes radarPulse {
+  0% {
+    r: 6px;
+    opacity: 0.9;
+  }
+  100% {
+    r: 28px;
+    opacity: 0;
+  }
+}
+
+@keyframes cyberScan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.animate-dash-flow {
+  animation: dashFlow 0.8s linear infinite;
+}
+
+.animate-radar-pulse {
+  animation: radarPulse 1.4s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+.animate-cyber-scan {
+  animation: cyberScan 2.5s ease-in-out infinite;
+}
+
+

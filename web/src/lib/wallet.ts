@@ -14,10 +14,12 @@ export async function getWalletSelector(): Promise<{ selector: WalletSelector; m
       const { setupMeteorWallet } = await import("@near-wallet-selector/meteor-wallet");
       const { setupHereWallet } = await import("@near-wallet-selector/here-wallet");
 
+      const rpcEndpoint = process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.drpc.org";
+
       const selector = await setupWalletSelector({
         network: {
           networkId: "testnet",
-          nodeUrl: "https://test.rpc.fastnear.com",
+          nodeUrl: rpcEndpoint,
           helperUrl: "https://helper.testnet.near.org",
           explorerUrl: "https://testnet.nearblocks.io",
           indexerUrl: "https://test.api.fastnear.com/v0",

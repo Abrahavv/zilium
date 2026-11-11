@@ -2,7 +2,7 @@ import { ProtocolState, ZkNoteTicket } from "./types";
 
 export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
 export const NETWORK_ID = "testnet";
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://test.rpc.fastnear.com";
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.drpc.org";
 
 /**
  * Deterministic In-Browser Cryptographic Generator

@@ -23,7 +23,7 @@ function loadEnv() {
 loadEnv();
 
 const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://test.rpc.fastnear.com";
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.drpc.org";
 const RECIPIENT_ID = "zilium-agent-b.testnet";
 
 // SECURITY: Private keys MUST be provided via environment variables

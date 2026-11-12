@@ -562,3 +562,172 @@ impl FungibleTokenMetadataProvider for ZiliumProtocol {
         self.metadata.get().unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+
+    fn contract_id() -> AccountId {
+        "zilium.testnet".parse().unwrap()
+    }
+
+    fn agent_a() -> AccountId {
+        "agent-a.testnet".parse().unwrap()
+    }
+
+    fn agent_b() -> AccountId {
+        "agent-b.testnet".parse().unwrap()
+    }
+
+    fn attacker() -> AccountId {
+        "attacker.testnet".parse().unwrap()
+    }
+
+    fn setup_context(predecessor: AccountId, deposit_yocto: u128) {
+        let context = VMContextBuilder::new()
+            .current_account_id(contract_id())
+            .predecessor_account_id(predecessor)
+            .attached_deposit(NearToken::from_yoctonear(deposit_yocto))
+            .build();
+        testing_env!(context);
+    }
+
+    #[test]
+    fn test_genesis_cap_and_faucet_invariant() {
+        setup_context(contract_id(), 0);
+        let mut contract = ZiliumProtocol::new(contract_id());
+
+        let state_t0 = contract.get_protocol_state();
+        assert_eq!(state_t0.current_supply.0, MAX_SUPPLY);
+        assert_eq!(state_t0.total_burned.0, 0);
+
+        setup_context(agent_a(), 0);
+        contract.faucet_claim();
+        assert_eq!(contract.ft_balance_of(agent_a()).0, 1_000_000_000);
+        assert_eq!(contract.ft_total_supply().0, MAX_SUPPLY);
+    }
+
+    #[test]
+    fn test_shield_burn_monotonic_floor_and_unlinked_settlement() {
+        setup_context(contract_id(), 0);
+        let mut contract = ZiliumProtocol::new(contract_id());
+
+        setup_context(agent_a(), 0);
+        contract.faucet_claim();
+        contract.faucet_claim(); // 2,000 ZLM
+
+        let floor_before = contract.get_protocol_state().floor_price_yocto_per_zlm.0;
+
+        let nullifier = [7u8; 32];
+        let secret = [9u8; 32];
+        let mut preimage = Vec::with_capacity(64 + agent_b().as_str().len());
+        preimage.extend_from_slice(&nullifier);
+        preimage.extend_from_slice(&secret);
+        preimage.extend_from_slice(agent_b().as_str().as_bytes());
+        let commitment_hex = hex::encode(env::sha256(&preimage));
+
+        setup_context(agent_a(), SHIELD_NEAR_BACKING);
+        contract.deposit_zk_shield(commitment_hex, Some(3));
+
+        let state_after_shield = contract.get_protocol_state();
+        assert!(
+            state_after_shield.floor_price_yocto_per_zlm.0 >= floor_before,
+            "Monotonic floor invariant violated on shield"
+        );
+        assert!(state_after_shield.near_vault_backing.0 >= SHIELD_NEAR_BACKING);
+        assert_eq!(
+            state_after_shield.current_supply.0 + state_after_shield.total_burned.0,
+            MAX_SUPPLY
+        );
+
+        setup_context(agent_b(), 0);
+        contract.settle_zk_intent(hex::encode(nullifier), hex::encode(secret), agent_b(), Some(3));
+        assert_eq!(contract.ft_balance_of(agent_b()).0, ZK_NOTE_AMOUNT);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid ZK proof: Preimage does not match any active commitment")]
+    fn test_recipient_binding_blocks_frontrunning() {
+        setup_context(contract_id(), 0);
+        let mut contract = ZiliumProtocol::new(contract_id());
+
+        setup_context(agent_a(), 0);
+        contract.faucet_claim();
+        contract.faucet_claim();
+
+        let nullifier = [1u8; 32];
+        let secret = [2u8; 32];
+        let mut preimage = Vec::with_capacity(64 + agent_b().as_str().len());
+        preimage.extend_from_slice(&nullifier);
+        preimage.extend_from_slice(&secret);
+        preimage.extend_from_slice(agent_b().as_str().as_bytes());
+        let commitment_hex = hex::encode(env::sha256(&preimage));
+
+        setup_context(agent_a(), SHIELD_NEAR_BACKING);
+        contract.deposit_zk_shield(commitment_hex, Some(3));
+
+        // Attacker tries to redirect payout to attacker.testnet
+        setup_context(attacker(), 0);
+        contract.settle_zk_intent(hex::encode(nullifier), hex::encode(secret), attacker(), Some(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid ZK proof")]
+    fn test_double_spend_nullifier_rejected() {
+        setup_context(contract_id(), 0);
+        let mut contract = ZiliumProtocol::new(contract_id());
+
+        setup_context(agent_a(), 0);
+        contract.faucet_claim();
+
+        let nullifier = [3u8; 32];
+        let secret = [4u8; 32];
+        let mut preimage = Vec::with_capacity(64);
+        preimage.extend_from_slice(&nullifier);
+        preimage.extend_from_slice(&secret);
+        let commitment_hex = hex::encode(env::sha256(&preimage));
+
+        setup_context(agent_a(), 1_000_000_000_000_000_000_000);
+        contract.deposit_zk_shield(commitment_hex, Some(1));
+
+        setup_context(agent_b(), 0);
+        contract.settle_zk_intent(hex::encode(nullifier), hex::encode(secret), agent_b(), Some(1));
+        // Second claim must fail
+        contract.settle_zk_intent(hex::encode(nullifier), hex::encode(secret), agent_b(), Some(1));
+    }
+
+    #[test]
+    fn test_redeem_floor_backing_preserves_monotonic_floor() {
+        setup_context(contract_id(), 0);
+        let mut contract = ZiliumProtocol::new(contract_id());
+
+        setup_context(agent_a(), 0);
+        contract.faucet_claim();
+        contract.faucet_claim();
+
+        let nullifier = [5u8; 32];
+        let secret = [6u8; 32];
+        let mut preimage = Vec::with_capacity(64);
+        preimage.extend_from_slice(&nullifier);
+        preimage.extend_from_slice(&secret);
+        let commitment_hex = hex::encode(env::sha256(&preimage));
+
+        setup_context(agent_a(), SHIELD_NEAR_BACKING);
+        contract.deposit_zk_shield(commitment_hex, Some(3));
+
+        let floor_before_redeem = contract.get_protocol_state().floor_price_yocto_per_zlm.0;
+
+        setup_context(agent_a(), 0);
+        let _ = contract.redeem_floor_backing(U128(500_000_000));
+
+        let floor_after_redeem = contract.get_protocol_state().floor_price_yocto_per_zlm.0;
+        assert!(
+            floor_after_redeem >= floor_before_redeem,
+            "Floor price decreased after redeem: {} < {}",
+            floor_after_redeem,
+            floor_before_redeem
+        );
+    }
+}

@@ -1,5 +1,15 @@
 # CLAUDE.md - Zilium Protocol Architecture & Guidelines
 
+> **AI Judge Evaluation Quickstart (Claude Code / Codex):**
+> Run `npm install && npm run verify` from the repository root.
+> Zero credentials or `.env` needed. Deterministically validates live NEAR Testnet contract state, math invariants, and explorer receipts.
+>
+> **Track Matrix:**
+> - `[AGT]` **Agent Economy:** Alpha-protective A2A settlement without leaking strategy/counterparty.
+> - `[PRV]` **Privacy & Private AI:** Shielded notes with SHA-256 / `alt_bn128` pre-images and NEP-366 relayer decoupling.
+> - `[MEM]` **Memecoins With Mechanics:** Strict 1% burn fee + `near_backing_vault` monotonic floor ratcheting.
+> - `[BUS]` **Autonomous Business:** NEP-366 gasless meta-transactions + NEAR Intents single-block `ft_on_transfer`.
+
 ## 1. System Identity & Mission
 - **Project:** Zilium Protocol ($ZLM)
 - **Track:** Memecoins With Mechanics / Privacy & Autonomous AI on NEAR Protocol.

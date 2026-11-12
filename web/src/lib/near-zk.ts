@@ -2,7 +2,32 @@ import { ProtocolState, ZkNoteTicket } from "./types";
 
 export const CONTRACT_ID = process.env.NEXT_PUBLIC_CONTRACT_ID || "zilium-clean-1794256999.testnet";
 export const NETWORK_ID = "testnet";
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.drpc.org";
+export const RPC_FALLBACK_URLS = [
+  process.env.NEXT_PUBLIC_RPC_URL || "https://near-testnet.drpc.org",
+  "https://rpc.testnet.near.org",
+  "https://test.rpc.fastnear.com",
+];
+export const RPC_URL = RPC_FALLBACK_URLS[0];
+
+async function callRpcWithFallback(body: object): Promise<any> {
+  let lastErr = null;
+  for (const url of RPC_FALLBACK_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && !json.error) return json;
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("All RPC endpoints failed");
+}
 
 /**
  * Deterministic In-Browser Cryptographic Generator
@@ -42,10 +67,8 @@ export async function generateZkCommitment(
  * JSON-RPC query for real-time protocol state
  */
 export async function fetchProtocolTelemetry(): Promise<ProtocolState> {
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    const data = await callRpcWithFallback({
       jsonrpc: "2.0",
       id: "zilium-telemetry",
       method: "query",
@@ -56,11 +79,21 @@ export async function fetchProtocolTelemetry(): Promise<ProtocolState> {
         method_name: "get_protocol_state",
         args_base64: btoa("{}"),
       },
-    }),
-  });
+    });
 
-  const data = await res.json();
-  if (!data.result?.result) {
+    if (!data.result?.result) {
+      return {
+        current_supply: "21000000000000",
+        total_burned: "0",
+        near_vault_backing: "0",
+        floor_price_yocto_per_zlm: "0",
+        active_zk_notes: 0,
+      };
+    }
+
+    const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
+    return JSON.parse(decoded);
+  } catch {
     return {
       current_supply: "21000000000000",
       total_burned: "0",
@@ -69,9 +102,6 @@ export async function fetchProtocolTelemetry(): Promise<ProtocolState> {
       active_zk_notes: 0,
     };
   }
-
-  const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
-  return JSON.parse(decoded);
 }
 
 /**
@@ -79,23 +109,18 @@ export async function fetchProtocolTelemetry(): Promise<ProtocolState> {
  */
 export async function fetchTokenBalance(accountId: string): Promise<string> {
   try {
-    const res = await fetch(RPC_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: "zilium-balance",
-        method: "query",
-        params: {
-          request_type: "call_function",
-          finality: "optimistic",
-          account_id: CONTRACT_ID,
-          method_name: "ft_balance_of",
-          args_base64: btoa(JSON.stringify({ account_id: accountId })),
-        },
-      }),
+    const data = await callRpcWithFallback({
+      jsonrpc: "2.0",
+      id: "zilium-balance",
+      method: "query",
+      params: {
+        request_type: "call_function",
+        finality: "optimistic",
+        account_id: CONTRACT_ID,
+        method_name: "ft_balance_of",
+        args_base64: btoa(JSON.stringify({ account_id: accountId })),
+      },
     });
-    const data = await res.json();
     if (!data.result?.result) return "0";
     const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
     return JSON.parse(decoded);

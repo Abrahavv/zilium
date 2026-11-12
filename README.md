@@ -28,21 +28,26 @@ Autonomous AI agents executing high-frequency economic actions on public blockch
 ## 2. Formal Cryptographic & Economic Invariants
 
 ### Law 1: Strict Deflationary Shielding Quota (1% Burn)
-Every time an autonomous agent shields $ZLM into a private note to rebalance liquidity or execute an OTC settlement, exactly 1% of the transfer amount is permanently destroyed from the circulating total supply:
+Every time an autonomous agent shields `ZLM` into a private note to rebalance liquidity or execute an OTC settlement, a strict **1% burn fee** is permanently deducted from total circulating supply:
+
 $$\text{Supply}_{t} = \text{Supply}_{t-1} - \text{Burn Fee}$$
 
 ### Law 2: Monotonically Non-Decreasing Floor Price (Protocol-Backed Reserve)
-Each shielded note requires locking native $NEAR into the contract's immutable reserve vault (`near_backing_vault`). The floor price is defined as:
+Each shielded note requires locking native `NEAR` into the contract's immutable reserve vault (`near_backing_vault`). The intrinsic floor price is defined as:
+
 $$\text{Floor Price}(t) = \frac{\text{NEAR Vault Reserve}(t)}{\text{Circulating Supply}(t)}$$
-Because the attached native NEAR remains irrevocably locked in the vault while the 1% burn permanently decreases the denominator ($\text{Supply}$), the intrinsic floor price ratchets upward monotonically:
+
+Because the attached native `NEAR` remains irrevocably locked in the vault while the 1% burn permanently decreases the denominator ($\text{Circulating Supply}$), the intrinsic floor price ratchets upward monotonically on every dark pool transaction:
+
 $$\text{Floor Price}(t) \ge \text{Floor Price}(t-1)$$
-*This creates an upward-ratcheting settlement asset where high-frequency dark pool volume structurally hardens the token's backing.*
+
+This creates an upward-ratcheting settlement asset where high-frequency dark pool volume structurally hardens the token's backing.
 
 ### Law 3: Atomic Unlinked Settlement & MEV Immunity
-* **Commitment & Recipient Binding:** Commitments are generated deterministically as $C = \text{SHA256}(\text{nullifier} \parallel \text{secret} \parallel \text{recipient})$ utilizing NEAR's native host cryptographic functions (`env::sha256`) and `alt_bn128`-compatible primitives. Supports both Bearer Dark Notes and Recipient-Bound Dark Notes.
-* **NEP-366 Relayer Front-Running Immunity:** By cryptographically binding the target recipient inside the meta-transaction payload (`settle_zk_intent_gasless`), predatory MEV searchers in the public mempool cannot intercept, front-run, or redirect funds even if they observe the settlement transaction.
-* **Async Reentrancy & Double-Spend Protection:** Designed specifically for NEAR's asynchronous cross-contract promise execution using the Checks-Effects-Interactions (CEI) pattern. The contract validates commitments and registers `Spent Nullifiers` in state strictly *before* issuing any token delivery or callback promises.
-* **Counterparty Graph Break:** The contract routes funds directly from the protocol vault to the recipient agent account. Public chain explorers and RPC indexers observe zero cryptographic or balance linkage between the sender (Agent Alpha) and receiver (Agent Beta).
+* **Commitment & Recipient Binding:** Cryptographic commitments are generated deterministically as $C = \text{SHA256}(\text{nullifier} \parallel \text{secret} \parallel \text{recipient})$ utilizing NEAR's native host cryptographic functions (`env::sha256`) and `alt_bn128`-compatible primitives. Supports both **Bearer Dark Notes** and **Recipient-Bound Dark Notes**.
+* **Anonymity Set & Relayer Decoupling:** Deposits accumulate inside the unified `zilium-clean-1794256999.testnet` liquidity pool across asynchronous time horizons, while settlement execution is decoupled via NEP-366 gasless relayers—preventing gas-payer correlation and breaking direct account-to-account balance transfers on public RPC indexers.
+* **NEP-366 Relayer Front-Running Immunity:** By cryptographically binding the target `recipient` inside the commitment and meta-transaction payload (`settle_zk_intent_gasless`), predatory MEV searchers in the public mempool cannot intercept, front-run, or redirect funds even if they observe the settlement transaction.
+* **Async Reentrancy & Double-Spend Protection:** Designed specifically for NEAR's asynchronous cross-contract promise execution using the **Checks-Effects-Interactions (CEI)** pattern. The contract validates commitments and registers **Spent Nullifiers** in state strictly *before* issuing any token delivery or callback promises.
 
 ---
 
@@ -52,11 +57,11 @@ All mechanics have been executed and verified on NEAR Testnet:
 
 | Step | Action | Method | Transaction Hash / Explorer Link |
 | :--- | :--- | :--- | :--- |
-| **0** | **Contract Deploy & Upgrade** | `deploy_code` | [`CP77Z1oz...`](https://testnet.nearblocks.io/txns/CP77Z1ozFbKyEKCun59AYcGkwARW6qnCb7RPKEn4kPAY) |
-| **1** | **Agent A Faucet Funding** | `faucet_claim()` | [`CwAc2xzJ...`](https://testnet.nearblocks.io/txns/CwAc2xzJM3EY1QcjnBvNWj5TtD3KpZXUd4Hjpd5Y2JWh) |
-| **2** | **ZK Shield Deposit (1% Burn)** | `deposit_zk_shield(commitment)` | [`AzjMicFJ...`](https://testnet.nearblocks.io/txns/AzjMicFJbM1f8YucohMULin4PcSH5zxJSFNamhp9jBSq) |
-| **3** | **Unlinked Settlement to Agent B** | `settle_zk_intent(nullifier, secret)` | [`3T4nGuru...`](https://testnet.nearblocks.io/txns/3T4nGuruUHXScprQ3FVCKw2yeipB853rT2UL86VNmpvv) |
-| **4** | **Floor Arbitrage Redemption** | `redeem_floor_backing(amount)` | Verified Monotonic Floor Impact |
+| **0** | **Contract Deploy & Upgrade** | `deploy_code` | [`CP77Z1ozFbKyEKCun59AYcGkwARW6qnCb7RPKEn4kPAY`](https://testnet.nearblocks.io/txns/CP77Z1ozFbKyEKCun59AYcGkwARW6qnCb7RPKEn4kPAY) |
+| **1** | **Agent A Faucet Funding** | `faucet_claim()` | [`CwAc2xzJM3EY1QcjnBvNWj5TtD3KpZXUd4Hjpd5Y2JWh`](https://testnet.nearblocks.io/txns/CwAc2xzJM3EY1QcjnBvNWj5TtD3KpZXUd4Hjpd5Y2JWh) |
+| **2** | **ZK Shield Deposit (1% Burn)** | `deposit_zk_shield(commitment)` | [`AzjMicFJbM1f8YucohMULin4PcSH5zxJSFNamhp9jBSq`](https://testnet.nearblocks.io/txns/AzjMicFJbM1f8YucohMULin4PcSH5zxJSFNamhp9jBSq) |
+| **3** | **Unlinked Settlement to Agent B** | `settle_zk_intent(nullifier, secret)` | [`3T4nGuruUHXScprQ3FVCKw2yeipB853rT2UL86VNmpvv`](https://testnet.nearblocks.io/txns/3T4nGuruUHXScprQ3FVCKw2yeipB853rT2UL86VNmpvv) |
+| **4** | **Floor Arbitrage Redemption** | `redeem_floor_backing(amount)` | [Verified Monotonic Floor Impact](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet) |
 
 - **Agent Alpha (Buyer / Quant Fund):** [`agent-a.zilium-clean-1794256999.testnet`](https://testnet.nearblocks.io/address/agent-a.zilium-clean-1794256999.testnet)
 - **Agent Beta (Seller / Liquidity Provider):** [`zilium-agent-b.testnet`](https://testnet.nearblocks.io/address/zilium-agent-b.testnet)

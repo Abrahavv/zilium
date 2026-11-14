@@ -105,15 +105,23 @@ Open [http://localhost:3000](http://localhost:3000) to inspect the live SVG topo
 
 ```
 zilium/
+├── circuits/                       # Circom 2.0 Poseidon BN254 Groth16 Circuit
+│   ├── zilium_withdraw.circom      # Private (nullifier, secret) + Public recipientHash
+│   ├── verification_key.json       # Groth16 BN254 verification key
+│   └── zilium_withdraw_final.zkey  # Phase-2 proving key
 ├── contract/                       # NEAR Protocol Smart Contract (Rust, near-sdk 5.5.0)
 │   ├── Cargo.toml                  # Target: wasm32-unknown-unknown
 │   └── src/
-│       └── lib.rs                  # NEP-141 + NEP-145 + NEP-366 + ZK Shield + Intents Receiver
+│       ├── lib.rs                  # NEP-141/145/297/366 + ZK Shield + settle_zk_snark + Intents
+│       └── zk_verifier.rs          # Native alt_bn128_g1_multiexp / g1_sum / pairing_check
 └── web/                            # Next.js 14 Institutional Web Terminal (Bloomberg Dark Pool)
+    ├── public/zk/                  # Browser prover artifacts (wasm + zkey)
     ├── src/
     │   ├── app/                    # 3-Tab Terminal (Dark Pool, Attack Battle, Telemetry)
-    │   │   └── api/settle-relay/   # NEP-366 Gasless Relayer API Route
+    │   │   ├── api/settle-relay/   # NEP-366 & Groth16 Gasless Relayer API Route
+    │   │   └── api/x402-inference/ # HTTP 402 Payment Required Machine-Payable Gate
     │   └── lib/
+    │       ├── zk-snark.ts         # Browser/Node snarkjs Groth16 BN254 Prover
     │       ├── near-zk.ts          # WebCrypto SHA-256 Engine + JSON-RPC client
     │       ├── state-machine.ts    # Deterministic contract mirror for offline demo
     │       ├── agent-simulation.ts # Live A2A terminal execution suite
@@ -128,5 +136,7 @@ zilium/
 - **NEP-141**: Fungible Token Standard Core (`ft_transfer`, `ft_transfer_call`, `ft_total_supply`, `ft_balance_of`).
 - **NEP-145**: Storage Management (`storage_deposit`, `storage_withdraw`, `storage_unregister`).
 - **NEP-148**: Fungible Token Metadata Standard.
-- **NEP-366**: Delegate Actions & Meta-Transactions (`settle_zk_intent_gasless`).
+- **NEP-297**: Structured `EVENT_JSON` Logs (`ft_burn` with `"version":"1.0.0"`).
+- **NEP-366**: Delegate Actions & Meta-Transactions (`/api/settle-relay`, `settle_zk_intent_gasless`).
 - **NEAR Intents Receiver**: Native `ft_on_transfer` interface enabling atomic cross-contract calls in a single block.
+- **HTTP 402 (x402)**: Machine-payable inference gate (`/api/x402-inference`) backed by Groth16 `settle_zk_snark` verification.

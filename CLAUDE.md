@@ -61,12 +61,16 @@
 
 ```
 zilium/
+├── circuits/              # Circom 2.0 Poseidon BN254 Groth16 circuit & VK
 ├── contract/              # NEAR Rust Smart Contract (WASM)
 │   ├── Cargo.toml         # near-sdk 5.5.0
-│   └── src/lib.rs         # Protocol implementation
+│   └── src/
+│       ├── lib.rs         # Protocol implementation + settle_zk_snark
+│       └── zk_verifier.rs # Native alt_bn128 Groth16 BN254 verifier
 ├── web/                   # Next.js 14 App Router UI & Telemetry
-│   ├── src/app/           # Institutional DAG Topology & UI
-│   └── src/lib/           # WebCrypto SHA-256 & verify-cli.ts
+│   ├── public/zk/         # Browser Groth16 wasm + zkey artifacts
+│   ├── src/app/           # Institutional DAG UI, /api/settle-relay, /api/x402-inference
+│   └── src/lib/           # zk-snark.ts, near-zk.ts & verify-cli.ts
 ├── CLAUDE.md              # Project instructions & architectural reference
 ├── README.md              # Public hackathon submission documentation
 └── package.json           # Monorepo task forwarder

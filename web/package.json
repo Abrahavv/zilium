@@ -16,12 +16,16 @@
     "@near-wallet-selector/meteor-wallet": "^10.1.4",
     "@near-wallet-selector/modal-ui": "^10.1.4",
     "@near-wallet-selector/my-near-wallet": "^10.1.4",
+    "@types/snarkjs": "^0.7.9",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
     "near-api-js": "^4.0.4",
     "next": "^14.2.24",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "snarkjs": "^0.7.6",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
@@ -29,6 +33,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "autoprefixer": "^10.4.20",
+    "circom2": "^0.2.23",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"

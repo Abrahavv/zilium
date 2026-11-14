@@ -30,7 +30,7 @@ const RPC_ENDPOINTS = [
 ];
 const AGENT_A_ID = "agent-a.zilium-clean-1794256999.testnet";
 const AGENT_B_ID = "zilium-agent-b.testnet";
-const VERIFIED_SETTLE_TX = "3T4nGuruUHXScprQ3FVCKw2yeipB853rT2UL86VNmpvv";
+const VERIFIED_SETTLE_TX = "4Z8CVjbC5c1SFCWVwye8hFp6D5ewcc4BzfXWQ1DUmBWk";
 
 const PRIVATE_KEY = process.env.TESTNET_MASTER_KEY;
 const AGENT_B_KEY = process.env.TESTNET_AGENT_B_KEY;

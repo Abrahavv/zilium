@@ -20,8 +20,8 @@ Autonomous AI agents executing high-frequency economic actions on public blockch
 **Zilium ($ZLM)** solves both challenges in a single WebAssembly smart contract on NEAR Protocol by combining:
 - **Strict Deflationary Quotas (1% Burn)** on every dark pool note generation, permanently decreasing total supply.
 - **Monotonically Increasing Floor Price** backed by locked native NEAR in the protocol vault.
-- **Unlinked Zero-Knowledge A2A Settlement** via SHA-256 pre-images (`alt_bn128` compatible) to break the sender-recipient graph with zero off-chain dependencies.
-- **Native NEP-366 Gasless Relayers & NEAR Intents (`ft_on_transfer`)** for atomic single-block execution across chains.
+- **True On-Chain Groth16 BN254 ZK-SNARKs (`env::alt_bn128_pairing_check`):** Commitments are generated over Poseidon (`circomlib`) and settled via `settle_zk_snark` using NEAR's native `alt_bn128_g1_multiexp` and `alt_bn128_pairing_check` host functions—never exposing `nullifier` or `secret` pre-images on-chain.
+- **Native NEP-366 Relayer & Live HTTP `402` (x402) Endpoint:** Real `/api/x402-inference` server returning `402 Payment Required` challenges and settling via Zilium Groth16 proofs before returning AI orderflow alpha.
 
 ---
 
@@ -57,10 +57,10 @@ All mechanics have been executed and verified on NEAR Testnet:
 
 | Step | Action | Method | Transaction Hash / Explorer Link |
 | :--- | :--- | :--- | :--- |
-| **0** | **Contract Deploy & Upgrade** | `deploy_code` | [`CP77Z1ozFbKyEKCun59AYcGkwARW6qnCb7RPKEn4kPAY`](https://testnet.nearblocks.io/txns/CP77Z1ozFbKyEKCun59AYcGkwARW6qnCb7RPKEn4kPAY) |
+| **0** | **Contract Deploy & Groth16 Upgrade** | `deploy_code` | [`CdaCa4Cz6N6JNSHpMyxsJSZShcAqkCmUwWfNhCqFWS4J`](https://testnet.nearblocks.io/txns/CdaCa4Cz6N6JNSHpMyxsJSZShcAqkCmUwWfNhCqFWS4J) |
 | **1** | **Agent A Faucet Funding** | `faucet_claim()` | [`CwAc2xzJM3EY1QcjnBvNWj5TtD3KpZXUd4Hjpd5Y2JWh`](https://testnet.nearblocks.io/txns/CwAc2xzJM3EY1QcjnBvNWj5TtD3KpZXUd4Hjpd5Y2JWh) |
-| **2** | **ZK Shield Deposit (1% Burn)** | `deposit_zk_shield(commitment)` | [`AzjMicFJbM1f8YucohMULin4PcSH5zxJSFNamhp9jBSq`](https://testnet.nearblocks.io/txns/AzjMicFJbM1f8YucohMULin4PcSH5zxJSFNamhp9jBSq) |
-| **3** | **Unlinked Settlement to Agent B** | `settle_zk_intent(nullifier, secret)` | [`3T4nGuruUHXScprQ3FVCKw2yeipB853rT2UL86VNmpvv`](https://testnet.nearblocks.io/txns/3T4nGuruUHXScprQ3FVCKw2yeipB853rT2UL86VNmpvv) |
+| **2** | **ZK Shield Deposit (1% Burn, Poseidon)** | `deposit_zk_shield(commitment)` | [`FqFvpEKvhviZtECoSupXSYRUkAAK6o6nQkoQEC4DBTgY`](https://testnet.nearblocks.io/txns/FqFvpEKvhviZtECoSupXSYRUkAAK6o6nQkoQEC4DBTgY) |
+| **3** | **Groth16 BN254 Settlement (`alt_bn128`)** | `settle_zk_snark(proof)` | [`4Z8CVjbC5c1SFCWVwye8hFp6D5ewcc4BzfXWQ1DUmBWk`](https://testnet.nearblocks.io/txns/4Z8CVjbC5c1SFCWVwye8hFp6D5ewcc4BzfXWQ1DUmBWk) |
 | **4** | **Floor Arbitrage Redemption** | `redeem_floor_backing(amount)` | [Verified Monotonic Floor Impact](https://testnet.nearblocks.io/address/zilium-clean-1794256999.testnet) |
 
 - **Agent Alpha (Buyer / Quant Fund):** [`agent-a.zilium-clean-1794256999.testnet`](https://testnet.nearblocks.io/address/agent-a.zilium-clean-1794256999.testnet)

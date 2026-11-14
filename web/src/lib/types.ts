@@ -13,6 +13,14 @@ export interface ZkNoteTicket {
   recipientId: string;
   tier: 1 | 2 | 3;
   timestamp: number;
+  groth16?: {
+    nullifierHashHex: string;
+    proof: {
+      a_hex: string;
+      b_hex: string;
+      c_hex: string;
+    };
+  };
 }
 
 export interface SettlementResult {

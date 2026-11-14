@@ -16,6 +16,9 @@ use near_sdk::{
     PromiseOrValue,
 };
 
+pub mod zk_verifier;
+pub use zk_verifier::Groth16Proof;
+
 const MAX_SUPPLY: u128 = 21_000_000_000_000;      // 21,000,000.000000 ZLM (6 decimals)
 const ZK_NOTE_AMOUNT: u128 = 1_000_000_000;       // 1,000.000000 ZLM note
 const DEFLATION_BURN_FEE: u128 = 10_000_000;      // 10.000000 ZLM (exact 1% burned)
@@ -194,20 +197,75 @@ impl ZiliumProtocol {
         }
         self.token.internal_deposit(&current_account, cfg.note_amount);
 
-        // 1% Deflationary Burn: Decrement total_supply permanently
-        self.token.total_supply = self
-            .token
-            .total_supply
-            .checked_sub(cfg.burn_fee)
-            .expect("Total supply underflow on burn");
+        // Note: internal_withdraw(note + burn_fee) + internal_deposit(note) already nets -burn_fee from total_supply
         self.total_burned += cfg.burn_fee;
         self.near_backing_vault += attached_near;
         self.commitments.insert(&commitment);
 
         log!(
-            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"ZK Shield Deflation\"}}]}}",
+            "EVENT_JSON:{{\"standard\":\"nep141\",\"version\":\"1.0.0\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"ZK Shield Deflation\"}}]}}",
             agent,
             cfg.burn_fee
+        );
+    }
+
+    /// Step 2 (Groth16 BN254 ZK-SNARK): True Zero-Knowledge Settlement via NEAR alt_bn128_pairing_check.
+    /// Neither nullifier nor secret ever appears on-chain; recipient_id is bound as a public signal.
+    pub fn settle_zk_snark(
+        &mut self,
+        proof: Groth16Proof,
+        commitment_hex: String,
+        nullifier_hash_hex: String,
+        recipient_id: AccountId,
+        tier: Option<u8>,
+    ) {
+        let cfg = get_tier_config(tier);
+        let commitment = hex::decode(&commitment_hex).expect("Invalid commitment hex");
+        let nullifier_hash = hex::decode(&nullifier_hash_hex).expect("Invalid nullifier_hash hex");
+        assert_eq!(commitment.len(), 32, "Commitment must be 32 bytes");
+        assert_eq!(nullifier_hash.len(), 32, "Nullifier hash must be 32 bytes");
+
+        assert!(
+            self.commitments.contains(&commitment),
+            "Unknown commitment: Note not found in active pool"
+        );
+        assert!(
+            !self.nullifiers.contains(&nullifier_hash),
+            "Double-spend prevented: Nullifier already spent"
+        );
+
+        let mut commitment_arr = [0u8; 32];
+        commitment_arr.copy_from_slice(&commitment);
+        let mut nullifier_hash_arr = [0u8; 32];
+        nullifier_hash_arr.copy_from_slice(&nullifier_hash);
+
+        // Derive BN254 field element from recipient_id: SHA256(recipient_id) masked to 253 bits (< r)
+        let r_digest = env::sha256(recipient_id.as_str().as_bytes());
+        let mut recipient_hash_arr = [0u8; 32];
+        recipient_hash_arr.copy_from_slice(&r_digest);
+        recipient_hash_arr[31] &= 0x1F;
+
+        assert!(
+            zk_verifier::verify_groth16_bn254(
+                &proof,
+                &[commitment_arr, nullifier_hash_arr, recipient_hash_arr],
+            ),
+            "Invalid Groth16 BN254 ZK-SNARK proof"
+        );
+
+        // Checks-Effects-Interactions: mark nullifier spent and remove commitment before transfer
+        self.nullifiers.insert(&nullifier_hash);
+        self.commitments.remove(&commitment);
+
+        let contract_id = env::current_account_id();
+        if !self.token.accounts.contains_key(&recipient_id) {
+            self.token.internal_register_account(&recipient_id);
+        }
+        self.token.internal_transfer(
+            &contract_id,
+            &recipient_id,
+            cfg.note_amount,
+            Some("Groth16 BN254 ZK-SNARK Unlinked Settlement".to_string()),
         );
     }
 
@@ -386,16 +444,11 @@ impl ZiliumProtocol {
         assert!(near_to_return > 0, "Redeem yields zero yoctoNEAR");
 
         self.token.internal_withdraw(&caller, burn_amount);
-        self.token.total_supply = self
-            .token
-            .total_supply
-            .checked_sub(burn_amount)
-            .expect("Total supply underflow on floor redeem");
         self.total_burned += burn_amount;
         self.near_backing_vault = self.near_backing_vault.saturating_sub(near_to_return);
 
         log!(
-            "EVENT_JSON:{{\"standard\":\"nep141\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Floor Price Redeem\"}}]}}",
+            "EVENT_JSON:{{\"standard\":\"nep141\",\"version\":\"1.0.0\",\"event\":\"ft_burn\",\"data\":[{{\"owner_id\":\"{}\",\"amount\":\"{}\",\"memo\":\"Floor Price Redeem\"}}]}}",
             caller,
             burn_amount
         );
@@ -411,11 +464,7 @@ impl ZiliumProtocol {
         } else {
             0
         };
-        let active = if self.commitments.len() >= self.nullifiers.len() {
-            self.commitments.len() - self.nullifiers.len()
-        } else {
-            0
-        };
+        let active = self.commitments.len();
         // Strict invariant: cumulative burn = MAX_SUPPLY - current_supply
         let burned = if MAX_SUPPLY >= supply {
             MAX_SUPPLY - supply

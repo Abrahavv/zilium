@@ -7,6 +7,7 @@ import {
   fetchTokenBalance,
   CONTRACT_ID,
 } from "@/lib/near-zk";
+import { generateGroth16NoteAndProof } from "@/lib/zk-snark";
 import { getWalletSelector } from "@/lib/wallet";
 import { DeterministicZiliumEngine } from "@/lib/state-machine";
 import { ProtocolState, ZkNoteTicket } from "@/lib/types";
@@ -301,7 +302,25 @@ export default function ZiliumDashboard() {
     }
     setLoading(true);
     try {
-      const ticket = await generateZkCommitment(recipientAgent, selectedTier);
+      let ticket: ZkNoteTicket;
+      if (mode === "LIVE_TESTNET" && walletAccountId) {
+        const targetRec = recipientAgent.trim() || "zilium-agent-b.testnet";
+        const snark = await generateGroth16NoteAndProof(targetRec);
+        ticket = {
+          nullifierHex: snark.nullifierHashHex,
+          secretHex: "0".repeat(64), // Never stored or exposed in plaintext
+          commitmentHex: snark.commitmentHex,
+          recipientId: targetRec,
+          tier: selectedTier,
+          timestamp: Date.now(),
+          groth16: {
+            nullifierHashHex: snark.nullifierHashHex,
+            proof: snark.proof,
+          },
+        };
+      } else {
+        ticket = await generateZkCommitment(recipientAgent, selectedTier);
+      }
       setActiveNote(ticket);
 
       if (mode === "LIVE_TESTNET" && walletAccountId) {
@@ -311,7 +330,7 @@ export default function ZiliumDashboard() {
           cfg.yoctoNear
         );
         setTxHash(hash);
-        notify(`Tier ${cfg.name} ZK Note Deposited (${cfg.burn} ZLM Burn + Floor Raised)!`, "success", hash);
+        notify(`Tier ${cfg.name} Groth16 ZK Note Deposited (${cfg.burn} ZLM Burn + Floor Raised)!`, "success", hash);
         await syncState();
         setTimeout(syncState, 2000);
       } else {
@@ -337,23 +356,37 @@ export default function ZiliumDashboard() {
     setLoading(true);
     try {
       if (mode === "LIVE_TESTNET") {
-        // True Dark Pool: Dispatch settlement via Agent B / Relayer to sever sender wallet graph
-        const res = await fetch("/api/settle-relay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        // True Dark Pool: Dispatch settlement via Groth16 SNARK (alt_bn128_pairing_check) or Commit-Reveal relayer
+        const payload = activeNote.groth16
+          ? {
+            proof: activeNote.groth16.proof,
+            commitmentHex: activeNote.commitmentHex,
+            nullifierHashHex: activeNote.groth16.nullifierHashHex,
+            recipientId: targetRecipient,
+            tier: targetTier,
+          }
+          : {
             nullifierHex: activeNote.nullifierHex,
             secretHex: activeNote.secretHex,
             recipientId: targetRecipient,
             tier: targetTier,
-          }),
+          };
+
+        const res = await fetch("/api/settle-relay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok || !data.success) {
           throw new Error(data.error || "Relayed settlement failed");
         }
         setTxHash(data.txHash);
-        notify(`Settled 100% Unlinked via ${data.signerId}! Delivered ${TIER_DETAILS[targetTier].note} ZLM to ${targetRecipient}`, "success", data.txHash);
+        notify(
+          `Settled via ${data.mode === "groth16-snark" ? "Groth16 alt_bn128" : data.signerId}! Delivered ${TIER_DETAILS[targetTier].note} ZLM to ${targetRecipient}`,
+          "success",
+          data.txHash
+        );
         setActiveNote(null);
         await syncState();
         setTimeout(syncState, 2000);
@@ -451,13 +484,12 @@ export default function ZiliumDashboard() {
         <aside
           role="status"
           aria-live="polite"
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-2xl flex items-start gap-3 text-xs border backdrop-blur-md transition-all max-w-md ${
-            toastMessage.type === "error"
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-2xl flex items-start gap-3 text-xs border backdrop-blur-md transition-all max-w-md ${toastMessage.type === "error"
               ? "bg-rose-950/90 border-rose-500 text-rose-200"
               : toastMessage.type === "info"
-              ? "bg-slate-900/90 border-slate-700 text-slate-200"
-              : "bg-emerald-950/90 border-emerald-500 text-emerald-200"
-          }`}
+                ? "bg-slate-900/90 border-slate-700 text-slate-200"
+                : "bg-emerald-950/90 border-emerald-500 text-emerald-200"
+            }`}
         >
           <Zap className="w-4 h-4 flex-shrink-0 text-emerald-400 mt-0.5" />
           <div className="flex flex-col gap-1 flex-1 min-w-0">
@@ -517,11 +549,10 @@ export default function ZiliumDashboard() {
                 setActiveNote(null);
                 notify("Switched to Live NEAR Testnet", "info");
               }}
-              className={`px-3 py-1.5 rounded-md transition ${
-                mode === "LIVE_TESTNET"
+              className={`px-3 py-1.5 rounded-md transition ${mode === "LIVE_TESTNET"
                   ? "bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20"
                   : "text-slate-400 hover:text-white"
-              }`}
+                }`}
             >
               NEAR Testnet
             </button>
@@ -531,11 +562,10 @@ export default function ZiliumDashboard() {
                 setActiveNote(null);
                 notify("Switched to Local Sandbox", "info");
               }}
-              className={`px-3 py-1.5 rounded-md transition ${
-                mode === "SIMULATION"
+              className={`px-3 py-1.5 rounded-md transition ${mode === "SIMULATION"
                   ? "bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20"
                   : "text-slate-400 hover:text-white"
-              }`}
+                }`}
             >
               Local Sandbox
             </button>
@@ -616,11 +646,10 @@ export default function ZiliumDashboard() {
       <nav aria-label="Dashboard Views" className="max-w-7xl mx-auto flex flex-wrap items-center gap-2 mb-6 border-b border-white/[0.08] pb-3">
         <button
           onClick={() => setActiveTab("TERMINAL")}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === "TERMINAL"
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${activeTab === "TERMINAL"
               ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/40 shadow-sm"
               : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
-          }`}
+            }`}
         >
           <Layers className="w-4 h-4 text-emerald-400" />
           Dark Pool Terminal
@@ -628,11 +657,10 @@ export default function ZiliumDashboard() {
 
         <button
           onClick={() => setActiveTab("ATTACK_SIM")}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === "ATTACK_SIM"
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${activeTab === "ATTACK_SIM"
               ? "bg-rose-500/10 text-rose-300 border border-rose-500/40 shadow-sm"
               : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
-          }`}
+            }`}
         >
           <Swords className="w-4 h-4 text-rose-400" />
           Attack Battle (x402 vs Zilium)
@@ -640,11 +668,10 @@ export default function ZiliumDashboard() {
 
         <button
           onClick={() => setActiveTab("TELEMETRY")}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === "TELEMETRY"
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${activeTab === "TELEMETRY"
               ? "bg-cyan-500/10 text-cyan-300 border border-cyan-500/40 shadow-sm"
               : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
-          }`}
+            }`}
         >
           <Cpu className="w-4 h-4 text-cyan-400" />
           Telemetry & Topology DAG
@@ -652,11 +679,10 @@ export default function ZiliumDashboard() {
 
         <button
           onClick={() => setActiveTab("STATS")}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-            activeTab === "STATS"
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${activeTab === "STATS"
               ? "bg-amber-500/10 text-amber-300 border border-amber-500/40 shadow-sm"
               : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
-          }`}
+            }`}
         >
           <TrendingUp className="w-4 h-4 text-amber-400" />
           Stats (ZLM Analytics)
@@ -707,7 +733,7 @@ export default function ZiliumDashboard() {
                 <p className="text-xs text-slate-400 mb-3 leading-relaxed">
                   Lock ZLM note, burn 1% permanently, and deposit NEAR into backing vault.
                 </p>
-                
+
                 {/* TIER PICKER BUTTONS */}
                 <div className="grid grid-cols-3 gap-1.5 bg-[#06080D] p-1 rounded-lg border border-white/[0.08] mb-3 text-[10px]">
                   <button
@@ -912,20 +938,34 @@ export default function ZiliumDashboard() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span className={`text-xs px-3 py-1 rounded-md font-bold uppercase border ${
-                attackStep === "TRANSMITTING"
+              <span className={`text-xs px-3 py-1 rounded-md font-bold uppercase border ${attackStep === "TRANSMITTING"
                   ? "bg-amber-950/80 border-amber-600 text-amber-300"
                   : attackStep === "INTERCEPTED"
-                  ? "bg-rose-950/80 border-rose-600 text-rose-300"
-                  : attackStep === "RESOLVED"
-                  ? "bg-emerald-950/80 border-emerald-600 text-emerald-300"
-                  : "bg-slate-900 border-slate-700 text-slate-400"
-              }`}>
+                    ? "bg-rose-950/80 border-rose-600 text-rose-300"
+                    : attackStep === "RESOLVED"
+                      ? "bg-emerald-950/80 border-emerald-600 text-emerald-300"
+                      : "bg-slate-900 border-slate-700 text-slate-400"
+                }`}>
                 {attackStep === "IDLE" && "Status: Standby"}
                 {attackStep === "TRANSMITTING" && "Status: In Flight"}
                 {attackStep === "INTERCEPTED" && "Status: Intercepted"}
                 {attackStep === "RESOLVED" && "Status: Complete"}
               </span>
+
+              <button
+                onClick={async () => {
+                  try {
+                    const r = await fetch("/api/x402-inference");
+                    const d = await r.json();
+                    notify(`HTTP ${r.status} (${d.accepts?.[0]?.scheme || "x402"}) | Merkle: ${String(d.accepts?.[0]?.merkleRoot || "").slice(0, 12)}...`, "info");
+                  } catch (e) {
+                    notify(String(e), "error");
+                  }
+                }}
+                className="px-3 py-1.5 bg-cyan-950/90 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/40 font-bold text-xs rounded-lg transition"
+              >
+                Probe HTTP 402
+              </button>
 
               <button
                 onClick={runParallelAttackSimulation}
@@ -955,11 +995,10 @@ export default function ZiliumDashboard() {
                 <div className="bg-[#0A0406] p-4 rounded-xl border border-rose-950 mb-4 space-y-3">
                   <div className="flex justify-between items-center text-[11px] font-mono">
                     <span className="text-slate-400">Pipeline Flow Status</span>
-                    <span className={`font-bold uppercase ${
-                      attackStep === "TRANSMITTING" ? "text-amber-400" :
-                      attackStep === "INTERCEPTED" ? "text-rose-400 animate-pulse" :
-                      attackStep === "RESOLVED" ? "text-rose-500 font-extrabold" : "text-slate-500"
-                    }`}>
+                    <span className={`font-bold uppercase ${attackStep === "TRANSMITTING" ? "text-amber-400" :
+                        attackStep === "INTERCEPTED" ? "text-rose-400 animate-pulse" :
+                          attackStep === "RESOLVED" ? "text-rose-500 font-extrabold" : "text-slate-500"
+                      }`}>
                       {attackStep === "IDLE" && "Ready // Standby"}
                       {attackStep === "TRANSMITTING" && "Phase 1: Broadcasting Intent (Cleartext)"}
                       {attackStep === "INTERCEPTED" && "Phase 2: Mempool Sniffed & Targeted"}
@@ -970,11 +1009,10 @@ export default function ZiliumDashboard() {
                   {/* 3 Interactive Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
                     {/* Node 1: Agent Alpha */}
-                    <div className={`p-3 rounded-lg border transition-all ${
-                      attackStep !== "IDLE"
+                    <div className={`p-3 rounded-lg border transition-all ${attackStep !== "IDLE"
                         ? "bg-rose-950/40 border-rose-600/70"
                         : "bg-black/40 border-white/[0.06]"
-                    }`}>
+                      }`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Sender</span>
                         <span className="text-[9px] bg-rose-950 px-1.5 py-0.5 rounded text-rose-300 font-mono">Step 1</span>
@@ -987,11 +1025,10 @@ export default function ZiliumDashboard() {
                     </div>
 
                     {/* Node 2: Public Mempool / Sniffer Bot */}
-                    <div className={`p-3 rounded-lg border transition-all relative ${
-                      attackStep === "INTERCEPTED" || attackStep === "RESOLVED"
+                    <div className={`p-3 rounded-lg border transition-all relative ${attackStep === "INTERCEPTED" || attackStep === "RESOLVED"
                         ? "bg-rose-950/80 border-rose-500 shadow-lg shadow-rose-950/50"
                         : "bg-black/40 border-white/[0.06]"
-                    }`}>
+                      }`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-rose-400 uppercase flex items-center gap-1">
                           <Eye className="w-3 h-3 text-rose-400" /> Mempool Bot
@@ -1013,11 +1050,10 @@ export default function ZiliumDashboard() {
                     </div>
 
                     {/* Node 3: Agent Beta */}
-                    <div className={`p-3 rounded-lg border transition-all ${
-                      attackStep === "RESOLVED"
+                    <div className={`p-3 rounded-lg border transition-all ${attackStep === "RESOLVED"
                         ? "bg-rose-950/50 border-rose-500"
                         : "bg-black/40 border-white/[0.06]"
-                    }`}>
+                      }`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Receiver</span>
                         <span className="text-[9px] bg-rose-950 px-1.5 py-0.5 rounded text-rose-300 font-mono">Step 3</span>
@@ -1111,11 +1147,10 @@ export default function ZiliumDashboard() {
                 <div className="bg-[#030C0A] p-4 rounded-xl border border-emerald-950 mb-4 space-y-3">
                   <div className="flex justify-between items-center text-[11px] font-mono">
                     <span className="text-slate-400">Pipeline Flow Status</span>
-                    <span className={`font-bold uppercase ${
-                      attackStep === "TRANSMITTING" ? "text-cyan-400" :
-                      attackStep === "INTERCEPTED" ? "text-emerald-400 animate-pulse" :
-                      attackStep === "RESOLVED" ? "text-emerald-400 font-extrabold" : "text-slate-500"
-                    }`}>
+                    <span className={`font-bold uppercase ${attackStep === "TRANSMITTING" ? "text-cyan-400" :
+                        attackStep === "INTERCEPTED" ? "text-emerald-400 animate-pulse" :
+                          attackStep === "RESOLVED" ? "text-emerald-400 font-extrabold" : "text-slate-500"
+                      }`}>
                       {attackStep === "IDLE" && "Ready // Standby"}
                       {attackStep === "TRANSMITTING" && "Phase 1: Minting Dark Commitment C"}
                       {attackStep === "INTERCEPTED" && "Phase 2: Air-Gap Matrix Active (0 Bytes Leaked)"}
@@ -1126,11 +1161,10 @@ export default function ZiliumDashboard() {
                   {/* 3 Interactive Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
                     {/* Node 1: Agent Alpha Shield */}
-                    <div className={`p-3 rounded-lg border transition-all ${
-                      attackStep !== "IDLE"
+                    <div className={`p-3 rounded-lg border transition-all ${attackStep !== "IDLE"
                         ? "bg-emerald-950/40 border-emerald-600/70"
                         : "bg-black/40 border-white/[0.06]"
-                    }`}>
+                      }`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Shield Deposit</span>
                         <span className="text-[9px] bg-emerald-950 px-1.5 py-0.5 rounded text-emerald-300 font-mono">Step 1</span>
@@ -1143,11 +1177,10 @@ export default function ZiliumDashboard() {
                     </div>
 
                     {/* Node 2: Cryptographic Air-Gap Bridge */}
-                    <div className={`p-3 rounded-lg border transition-all relative ${
-                      attackStep === "INTERCEPTED" || attackStep === "RESOLVED"
+                    <div className={`p-3 rounded-lg border transition-all relative ${attackStep === "INTERCEPTED" || attackStep === "RESOLVED"
                         ? "bg-cyan-950/60 border-cyan-400 shadow-lg shadow-cyan-950/50"
                         : "bg-black/40 border-white/[0.06]"
-                    }`}>
+                      }`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-cyan-300 uppercase flex items-center gap-1">
                           <Shield className="w-3 h-3 text-cyan-400" /> Air-Gap ZK
@@ -1169,11 +1202,10 @@ export default function ZiliumDashboard() {
                     </div>
 
                     {/* Node 3: Agent Beta Recipient */}
-                    <div className={`p-3 rounded-lg border transition-all ${
-                      attackStep === "RESOLVED"
+                    <div className={`p-3 rounded-lg border transition-all ${attackStep === "RESOLVED"
                         ? "bg-emerald-950/60 border-emerald-400 shadow-md shadow-emerald-950/40"
                         : "bg-black/40 border-white/[0.06]"
-                    }`}>
+                      }`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Unlinked Payout</span>
                         <span className="text-[9px] bg-emerald-950 px-1.5 py-0.5 rounded text-emerald-300 font-mono">Step 3</span>
